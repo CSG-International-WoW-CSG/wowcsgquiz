@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Join — WoW-CSG Quiz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="page theme-wow-csg">
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+  <main class="card">
+    <a href="/" class="fineprint" style="display: inline-block; margin-bottom: 12px; text-decoration: none">← Home</a>
+    <div id="join">
+      <span class="badge">Player</span>
+      <h1 class="question-title">Join game</h1>
+      <label for="pin">Game PIN</label>
+      <input id="pin" inputmode="numeric" maxlength="8" autocomplete="one-time-code" />
+      <label for="name">Nickname</label>
+      <input id="name" maxlength="24" autocomplete="nickname" placeholder="Your name" />
+      <p id="joinErr" class="error hidden"></p>
+      <button type="button" class="btn primary" id="btnJoin">Enter</button>
+    </div>
+
+    <div id="wait" class="hidden">
+      <p class="lede">You are in the lobby. Wait for the host to start.</p>
+      <p class="fineprint" id="waitTitle"></p>
+    </div>
+
+    <div id="play" class="hidden">
+      <p class="fineprint" id="playMeta"></p>
+      <h2 class="question-title" id="pq"></h2>
+      <div class="timer" id="ptimer"></div>
+      <div class="choice-grid" id="pchoices"></div>
+    </div>
+
+    <div id="reveal" class="hidden">
+      <h2 class="question-title" id="revealTitle"></h2>
+      <ul class="player-list" id="miniLb"></ul>
+    </div>
+
+    <div id="done" class="hidden">
+      <h2 class="question-title">Thanks for playing!</h2>
+      <ul class="player-list" id="doneLb"></ul>
+      <a href="/play.html" class="btn ghost" style="margin-top: 14px; display: inline-flex">Play again</a>
+    </div>
+  </main>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
+  <script src="/quiz-music.js"></script>
+  <script src="/play.js"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Host — WoW-CSG Quiz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="page theme-wow-csg">
+  <div class="ambient ambient-a" aria-hidden="true"></div>
+  <div class="ambient ambient-b" aria-hidden="true"></div>
+  <main class="card wide">
+    <a href="/" class="fineprint" style="display: inline-block; margin-bottom: 12px; text-decoration: none">← Home</a>
+    <div id="setup">
+      <span class="badge">Host</span>
+      <h1 class="question-title">Build your quiz</h1>
+      <p class="lede" style="margin-bottom: 16px">Enter each question, four answer options, mark the correct one, and set the timer. Add as many questions as you need.</p>
+
+      <label for="quizTitle">Quiz title</label>
+      <input id="quizTitle" type="text" maxlength="120" placeholder="e.g. Friday team trivia" value="WoW-CSG Quiz" />
+
+      <div class="toolbar" style="margin-bottom: 12px">
+        <button type="button" class="btn ghost" id="btnAddQ">+ Add question</button>
+        <button type="button" class="btn ghost" id="btnLoadSample">Load sample questions</button>
+      </div>
+
+      <div id="quizBuilder" class="builder-scroll" aria-label="Quiz questions"></div>
+
+      <details class="advanced">
+        <summary>Import JSON instead</summary>
+        <label for="quizJson">If this box has text, it overrides the form above.</label>
+        <textarea id="quizJson" placeholder='{"title":"WoW-CSG Quiz","questions":[{"text":"Q1?","choices":["A","B","C","D"],"correctIndex":0,"timeSec":20}]}'></textarea>
+      </details>
+
+      <p id="setupErr" class="error hidden"></p>
+      <button type="button" class="btn primary" id="btnCreate">Create game</button>
+    </div>
+
+    <div id="lobby" class="hidden">
+      <span class="badge">Lobby</span>
+      <p class="lede" style="margin-bottom: 8px">Players open <strong>Join a game</strong> and enter this PIN:</p>
+      <div class="pin-display" id="pinDisplay">------</div>
+      <p class="fineprint" id="joinHint"></p>
+      <p class="lede" style="margin-top: 16px; margin-bottom: 8px">Players (<span id="pc">0</span> / 500)</p>
+      <ul class="player-list" id="plist"></ul>
+      <div class="toolbar">
+        <button type="button" class="btn primary" id="btnStart">Start quiz</button>
+        <button type="button" class="btn danger" id="btnEndLobby">End session</button>
+      </div>
+      <p id="lobbyErr" class="error hidden"></p>
+    </div>
+
+    <div id="live" class="hidden">
+      <span class="badge" id="phaseBadge">Question</span>
+      <p class="fineprint" id="qmeta"></p>
+      <h2 class="question-title" id="qtext"></h2>
+      <div class="timer" id="timer"></div>
+      <div id="choicesPreview" class="grid-2" style="margin-top: 16px"></div>
+      <div class="toolbar">
+        <button type="button" class="btn primary hidden" id="btnReveal">Reveal answer</button>
+        <button type="button" class="btn primary hidden" id="btnNext">Next</button>
+      </div>
+      <div id="revealPanel" class="hidden" style="margin-top: 16px">
+        <p class="lede" id="correctLine"></p>
+        <h3 class="question-title" style="font-size: 1rem">Top players</h3>
+        <ul class="player-list" id="leaderboard"></ul>
+      </div>
+      <div id="finished" class="hidden" style="margin-top: 16px">
+        <h2 class="question-title">Game over</h2>
+        <ul class="player-list" id="finalBoard"></ul>
+        <a class="btn ghost" href="/host.html" style="margin-top: 14px; display: inline-flex">New game</a>
+      </div>
+    </div>
+  </main>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
+  <script src="/quiz-music.js"></script>
+  <script src="/host.js"></script>
+</body>
+</html>
