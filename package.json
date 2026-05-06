@@ -1,0 +1,16 @@
+{
+  "name": "live-quiz-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Real-time quiz host + player clients (Kahoot-style). Run: npm install && npm start",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
