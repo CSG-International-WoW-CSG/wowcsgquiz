@@ -11,6 +11,8 @@
   let enabled = true;
   /** True after first live question until game over (keeps music between rounds). */
   let sessionActive = false;
+  /** True while host is on the quiz builder screen (before lobby). */
+  let builderActive = false;
 
   function loadPref() {
     try {
@@ -69,7 +71,7 @@
   }
 
   function playBackdrop() {
-    if (!enabled || !sessionActive) return;
+    if (!enabled || (!sessionActive && !builderActive)) return;
     const a = ensureAudio();
     clearFade();
     a.volume = baseVolume;
@@ -104,7 +106,17 @@
    */
   function setSessionActive(on) {
     sessionActive = Boolean(on);
-    if (!sessionActive) stopBackdrop();
+    if (!sessionActive && !builderActive) stopBackdrop();
+  }
+
+  /**
+   * Host quiz builder: allow backdrop while editing questions (still requires a prior user gesture via unlock).
+   * @param {boolean} on
+   */
+  function setBuilderActive(on) {
+    builderActive = Boolean(on);
+    if (!builderActive && !sessionActive) stopBackdrop();
+    else if (builderActive && enabled) playBackdrop();
   }
 
   function setEnabled(on) {
@@ -145,7 +157,7 @@
     btn.addEventListener("click", () => {
       unlock().finally(() => {
         setEnabled(!enabled);
-        if (enabled && sessionActive) playBackdrop();
+        if (enabled && (sessionActive || builderActive)) playBackdrop();
       });
     });
   }
@@ -162,6 +174,7 @@
     setEnabled,
     isEnabled,
     setSessionActive,
+    setBuilderActive,
     mountToggle,
   };
 })();

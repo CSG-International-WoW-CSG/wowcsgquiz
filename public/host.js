@@ -68,6 +68,22 @@
   let socket = null;
   let timerId = null;
 
+  /** First successful unlock in the quiz builder starts backdrop (browser autoplay policy). */
+  let builderMusicPrimed = false;
+  let builderUnlockPending = false;
+  function primeBuilderMusic() {
+    if (builderMusicPrimed || builderUnlockPending) return;
+    builderUnlockPending = true;
+    window.QuizMusic?.unlock?.().finally(() => {
+      builderUnlockPending = false;
+      builderMusicPrimed = true;
+      window.QuizMusic?.setBuilderActive?.(true);
+    });
+  }
+  setup.addEventListener("pointerdown", primeBuilderMusic, { passive: true });
+  setup.addEventListener("keydown", primeBuilderMusic, { passive: true });
+  setup.addEventListener("focusin", primeBuilderMusic);
+
   function show(el, on) {
     el.classList.toggle("hidden", !on);
   }
@@ -403,6 +419,7 @@
     pinDisplay.textContent = pin;
     const base = `${window.location.origin}`;
     joinHint.innerHTML = `Player link: <a href="${base}/play.html?pin=${pin}" style="color:#00cec9">${base}/play.html?pin=${pin}</a>`;
+    window.QuizMusic?.setBuilderActive?.(false);
     show(setup, false);
     show(lobby, true);
     connectSocket();
