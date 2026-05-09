@@ -1,9 +1,38 @@
 /**
- * Quiz backdrop music (loop). Track: Kevin MacLeod — incompetech.com — CC BY 4.0.
+ * Quiz backdrop music: playlist of similar upbeat tracks (no single-song loop).
+ * Tracks: Kevin MacLeod — incompetech.com — CC BY 4.0.
  * Call unlock() from a user click/touch before play() so browsers allow audio.
  */
 (() => {
   const STORAGE_KEY = "wowCsgQuizMusicEnabled";
+  /** Similar tempo/mood — rotates when each track ends (not the same song on repeat). */
+  const TRACKS = [
+    {
+      title: "Beach Party",
+      url: "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Beach%20Party.mp3",
+    },
+    {
+      title: "Happy Alley",
+      url: "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Happy%20Alley.mp3",
+    },
+    {
+      title: "Jaunty Gumption",
+      url: "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Jaunty%20Gumption.mp3",
+    },
+    {
+      title: "Who Likes to Party",
+      url: "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Who%20Likes%20to%20Party.mp3",
+    },
+    {
+      title: "Feelin Good",
+      url: "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Feelin%20Good.mp3",
+    },
+    {
+      title: "Carefree",
+      url: "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Carefree.mp3",
+    },
+  ];
+
   /** @type {HTMLAudioElement | null} */
   let audio = null;
   let fadeTimer = null;
@@ -13,6 +42,10 @@
   let sessionActive = false;
   /** True while host is on the quiz builder screen (before lobby). */
   let builderActive = false;
+  /** Index into TRACKS for the current song. */
+  let trackIndex = 0;
+  /** Avoid infinite skip loops if sources fail to load. */
+  let consecutiveErrors = 0;
 
   function loadPref() {
     try {
@@ -32,14 +65,75 @@
     }
   }
 
+  function shouldPlayBackdrop() {
+    return enabled && (sessionActive || builderActive);
+  }
+
+  function updateCreditUi() {
+    const titleEl = document.getElementById("quizMusicTrackTitle");
+    const t = TRACKS[trackIndex];
+    if (titleEl && t) titleEl.textContent = t.title;
+  }
+
+  /** Pick a different track than the current one when possible. */
+  function pickNextTrackIndex() {
+    if (TRACKS.length < 2) return 0;
+    let n = Math.floor(Math.random() * TRACKS.length);
+    let guard = 0;
+    while (n === trackIndex && guard < 8) {
+      n = Math.floor(Math.random() * TRACKS.length);
+      guard += 1;
+    }
+    return n;
+  }
+
+  /**
+   * @param {number} i
+   */
+  function loadTrack(i) {
+    if (!audio) return;
+    trackIndex = ((i % TRACKS.length) + TRACKS.length) % TRACKS.length;
+    const t = TRACKS[trackIndex];
+    audio.src = t.url;
+    try {
+      audio.load();
+    } catch (_) {
+      /* ignore */
+    }
+    updateCreditUi();
+  }
+
+  function onTrackEnded() {
+    consecutiveErrors = 0;
+    if (!shouldPlayBackdrop()) return;
+    loadTrack(pickNextTrackIndex());
+    const a = audio;
+    if (!a) return;
+    a.volume = baseVolume;
+    a.play().catch(() => {});
+  }
+
+  function onTrackError() {
+    if (!shouldPlayBackdrop()) return;
+    consecutiveErrors += 1;
+    if (consecutiveErrors > TRACKS.length * 2) return;
+    loadTrack(trackIndex + 1);
+    const a = audio;
+    if (!a) return;
+    a.volume = baseVolume;
+    a.play().catch(() => {});
+  }
+
   function ensureAudio() {
     if (audio) return audio;
-    const TRACK_URL =
-      "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Beach%20Party.mp3";
-    audio = new Audio(TRACK_URL);
-    audio.loop = true;
+    trackIndex = Math.floor(Math.random() * TRACKS.length);
+    audio = new Audio();
+    audio.loop = false;
     audio.preload = "auto";
     audio.volume = baseVolume;
+    audio.addEventListener("ended", onTrackEnded);
+    audio.addEventListener("error", onTrackError);
+    loadTrack(trackIndex);
     return audio;
   }
 
@@ -71,9 +165,10 @@
   }
 
   function playBackdrop() {
-    if (!enabled || (!sessionActive && !builderActive)) return;
+    if (!shouldPlayBackdrop()) return;
     const a = ensureAudio();
     clearFade();
+    consecutiveErrors = 0;
     a.volume = baseVolume;
     a.play().catch(() => {});
   }
@@ -136,6 +231,7 @@
 
   function mountToggle() {
     if (document.getElementById("quizMusicBar")) return;
+    const firstTitle = TRACKS[0].title;
     const bar = document.createElement("div");
     bar.id = "quizMusicBar";
     bar.className = "quiz-music-bar";
@@ -146,7 +242,7 @@
         ${enabled ? "Music on" : "Music off"}
       </button>
       <p class="quiz-music-credit">
-        <span class="quiz-music-credit-title">Beach Party</span>
+        Now playing: <span class="quiz-music-credit-title" id="quizMusicTrackTitle">${firstTitle}</span>
         · Kevin MacLeod ·
         <a href="https://incompetech.com/music/royalty-free/music.html" target="_blank" rel="noopener noreferrer">incompetech.com</a>
         · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>
