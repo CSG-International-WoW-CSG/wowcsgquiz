@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const MAX_PLAYERS_PER_GAME = 500;
+const MAX_PLAYERS_PER_GAME = 5000;
 const PIN_LENGTH = 6;
 const DATA_DIR = path.join(__dirname, "..", ".data");
 const SNAPSHOT_FILE = path.join(DATA_DIR, "games.json");

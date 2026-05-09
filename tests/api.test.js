@@ -1,7 +1,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createQuizServer } = require("../server/index");
-const { games } = require("../server/gameStore");
+const {
+  games,
+  MAX_PLAYERS_PER_GAME,
+  createGame,
+  getGame,
+  deleteGame,
+  newUniquePin,
+  DEFAULT_QUIZ,
+} = require("../server/gameStore");
 
 const HOST_PASSWORD = process.env.HOST_ADMIN_PASSWORD || "wowcsg-admin";
 
@@ -20,6 +28,30 @@ function stopServer(server) {
     server.close((err) => (err ? reject(err) : resolve()));
   });
 }
+
+test("game supports up to 5000 players per room", () => {
+  assert.equal(MAX_PLAYERS_PER_GAME, 5000);
+});
+
+test("game session can hold up to max player records", () => {
+  games.clear();
+  const pin = newUniquePin();
+  createGame(pin, DEFAULT_QUIZ, "test-host-secret");
+  const game = getGame(pin);
+  assert.ok(game);
+  for (let i = 0; i < MAX_PLAYERS_PER_GAME; i++) {
+    const id = `id_${i}`;
+    game.players.set(id, {
+      id,
+      name: `P${i}`,
+      score: 0,
+      connected: true,
+      lastSeenAt: Date.now(),
+    });
+  }
+  assert.equal(game.players.size, MAX_PLAYERS_PER_GAME);
+  deleteGame(pin);
+});
 
 test("health endpoint works", async () => {
   const svc = await startServer();
