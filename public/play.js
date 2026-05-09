@@ -25,6 +25,7 @@
   /** @type {import('socket.io-client').Socket | null} */
   let socket = null;
   let pin = "";
+  let playerToken = "";
   let timerId = null;
   let currentQ = -1;
 
@@ -68,6 +69,10 @@
     timerId = setInterval(tick, 250);
   }
 
+  function tokenStorageKey(pinValue) {
+    return `quiz_player_token_${pinValue}`;
+  }
+
   $("btnJoin").addEventListener("click", () => {
     window.QuizMusic?.unlock?.();
     setError("");
@@ -81,13 +86,24 @@
       setError("Enter a nickname");
       return;
     }
+    try {
+      playerToken = localStorage.getItem(tokenStorageKey(pin)) || "";
+    } catch {
+      playerToken = "";
+    }
     socket = io({ transports: ["websocket", "polling"] });
-    socket.emit("player:join", { pin, name }, (res) => {
+    socket.emit("player:join", { pin, name, playerId: playerToken }, (res) => {
       if (!res?.ok) {
         setError(res?.error || "Could not join");
         socket?.close();
         socket = null;
         return;
+      }
+      if (res.playerId) {
+        playerToken = res.playerId;
+        try {
+          localStorage.setItem(tokenStorageKey(pin), playerToken);
+        } catch {}
       }
       waitTitle.textContent = res.title || "";
       show(join, false);
@@ -155,6 +171,9 @@
 
     socket.on("game:ended", () => {
       window.QuizMusic?.setSessionActive?.(false);
+      try {
+        localStorage.removeItem(tokenStorageKey(pin));
+      } catch {}
       window.location.href = "/play.html";
     });
 

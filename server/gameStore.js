@@ -1,10 +1,10 @@
-/**
- * In-memory game sessions. For multiple app instances behind a load balancer,
- * replace this with Redis + @socket.io/redis-adapter and shared session state.
- */
+const fs = require("fs");
+const path = require("path");
 
 const MAX_PLAYERS_PER_GAME = 500;
 const PIN_LENGTH = 6;
+const DATA_DIR = path.join(__dirname, "..", ".data");
+const SNAPSHOT_FILE = path.join(DATA_DIR, "games.json");
 
 function randomPin() {
   const n = Math.floor(100000 + Math.random() * 900000);
@@ -41,6 +41,65 @@ const DEFAULT_QUIZ = {
 /** @type {Map<string, import('./types').GameSession>} */
 const games = new Map();
 
+let persistTimer = null;
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function toSerializableGame(game) {
+  return {
+    ...game,
+    players: [...game.players.entries()],
+    answersThisRound: [...game.answersThisRound.entries()],
+  };
+}
+
+function fromSerializableGame(raw) {
+  return {
+    ...raw,
+    players: new Map(Array.isArray(raw.players) ? raw.players : []),
+    answersThisRound: new Map(Array.isArray(raw.answersThisRound) ? raw.answersThisRound : []),
+  };
+}
+
+function saveSnapshotNow() {
+  ensureDataDir();
+  const payload = {
+    updatedAt: Date.now(),
+    games: [...games.values()].map(toSerializableGame),
+  };
+  fs.writeFileSync(SNAPSHOT_FILE, JSON.stringify(payload, null, 2), "utf8");
+}
+
+function schedulePersist() {
+  if (persistTimer) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    try {
+      saveSnapshotNow();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Could not persist game snapshot", err);
+    }
+  }, 200);
+}
+
+function loadSnapshot() {
+  try {
+    if (!fs.existsSync(SNAPSHOT_FILE)) return;
+    const raw = JSON.parse(fs.readFileSync(SNAPSHOT_FILE, "utf8"));
+    const loaded = Array.isArray(raw.games) ? raw.games : [];
+    for (const g of loaded) {
+      if (!g?.pin) continue;
+      games.set(g.pin, fromSerializableGame(g));
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("Could not read game snapshot", err);
+  }
+}
+
 /**
  * @param {string} pin
  * @param {import('./types').Quiz} quiz
@@ -50,14 +109,19 @@ function createGame(pin, quiz, hostSecret) {
   games.set(pin, {
     pin,
     hostSecret,
+    hostName: "Host",
+    hostToken: "",
     quiz,
     phase: "lobby",
     questionIndex: -1,
     /** @type {Map<string, import('./types').PlayerState>} */
     players: new Map(),
     answersThisRound: new Map(),
+    questionStartedAt: 0,
+    analytics: [],
     createdAt: Date.now(),
   });
+  schedulePersist();
 }
 
 function getGame(pin) {
@@ -66,6 +130,7 @@ function getGame(pin) {
 
 function deleteGame(pin) {
   games.delete(pin);
+  schedulePersist();
 }
 
 function newUniquePin() {
@@ -76,6 +141,12 @@ function newUniquePin() {
   return `${Date.now()}`.slice(-PIN_LENGTH);
 }
 
+function touchGame() {
+  schedulePersist();
+}
+
+loadSnapshot();
+
 module.exports = {
   MAX_PLAYERS_PER_GAME,
   DEFAULT_QUIZ,
@@ -84,4 +155,5 @@ module.exports = {
   getGame,
   deleteGame,
   newUniquePin,
+  touchGame,
 };

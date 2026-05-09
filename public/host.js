@@ -27,9 +27,15 @@
   const phaseBadge = $("phaseBadge");
   const quizBuilder = $("quizBuilder");
   const quizTitle = $("quizTitle");
+  const hostNameInput = $("hostName");
+  const hostPasswordInput = $("hostPassword");
   const quizJson = $("quizJson");
   const btnAddQ = $("btnAddQ");
   const btnLoadSample = $("btnLoadSample");
+  const connectedPc = $("connectedPc");
+  const btnAnalytics = $("btnAnalytics");
+  const analyticsPanel = $("analyticsPanel");
+  const analyticsText = $("analyticsText");
 
   const SAMPLE_QUIZ = {
     title: "WoW-CSG Quiz",
@@ -57,6 +63,7 @@
 
   let pin = "";
   let hostSecret = "";
+  let hostToken = "";
   /** @type {import('socket.io-client').Socket | null} */
   let socket = null;
   let timerId = null;
@@ -296,12 +303,36 @@
 
   function renderLobby(g) {
     pc.textContent = String(g.playerCount);
+    connectedPc.textContent = String(g.connectedCount ?? g.playerCount ?? 0);
     plist.innerHTML = "";
     (g.players || []).forEach((p) => {
       const li = document.createElement("li");
-      li.innerHTML = `<span>${escapeHtml(p.name)}</span><span class="score">${p.score}</span>`;
+      li.innerHTML = `<span>${escapeHtml(p.name)}${p.connected === false ? " (offline)" : ""}</span><span class="score">${p.score}</span>`;
       plist.appendChild(li);
     });
+  }
+
+  async function loadAnalytics() {
+    if (!pin || !hostSecret) return;
+    analyticsText.textContent = "Loading...";
+    show(analyticsPanel, true);
+    try {
+      const res = await fetch(`/api/game/${encodeURIComponent(pin)}/analytics?hostSecret=${encodeURIComponent(hostSecret)}`);
+      if (!res.ok) {
+        analyticsText.textContent = "Could not load analytics.";
+        return;
+      }
+      const data = await res.json();
+      const rows = (data.analytics || [])
+        .map((a) => {
+          const pct = a.totalAnswers ? Math.round((a.correctAnswers / a.totalAnswers) * 100) : 0;
+          return `Q${a.questionIndex + 1}: ${a.correctAnswers}/${a.totalAnswers} correct (${pct}%), avg response ${a.avgResponseMs}ms`;
+        })
+        .join("\n");
+      analyticsText.textContent = rows || "No analytics yet. Start the quiz and reveal answers.";
+    } catch {
+      analyticsText.textContent = "Could not load analytics.";
+    }
   }
 
   function stopTimer() {
@@ -351,15 +382,24 @@
     const res = await fetch("/api/host/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ quiz }),
+      body: JSON.stringify({
+        quiz,
+        hostName: hostNameInput.value.trim() || "Host",
+        hostPassword: hostPasswordInput.value,
+      }),
     });
     if (!res.ok) {
-      setError(setupErr, "Server error");
+      const maybe = await res.json().catch(() => ({}));
+      setError(setupErr, maybe.error || "Server error");
       return;
     }
     const data = await res.json();
     pin = data.pin;
     hostSecret = data.hostSecret;
+    hostToken = data.hostToken || "";
+    try {
+      localStorage.setItem("quiz_host_token", hostToken);
+    } catch {}
     pinDisplay.textContent = pin;
     const base = `${window.location.origin}`;
     joinHint.innerHTML = `Player link: <a href="${base}/play.html?pin=${pin}" style="color:#00cec9">${base}/play.html?pin=${pin}</a>`;
@@ -390,5 +430,9 @@
         show(btnNext, false);
       }
     });
+  });
+
+  btnAnalytics.addEventListener("click", () => {
+    loadAnalytics();
   });
 })();

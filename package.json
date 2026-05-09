@@ -4,7 +4,8 @@
   "private": true,
   "description": "Real-time quiz host + player clients (Kahoot-style). Run: npm install && npm start",
   "scripts": {
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"
