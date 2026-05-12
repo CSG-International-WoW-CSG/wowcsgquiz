@@ -12,6 +12,7 @@ const {
   newUniquePin,
   touchGame,
 } = require("./gameStore");
+const quizLibrary = require("./quizLibrary");
 
 const PORT = Number(process.env.PORT) || 3333;
 const HOST_ADMIN_PASSWORD = String(process.env.HOST_ADMIN_PASSWORD || "wowcsg-admin");
@@ -173,6 +174,75 @@ function createQuizServer() {
       })),
       analytics: game.analytics || [],
     });
+  });
+
+  app.get("/api/quizzes/library", (req, res) => {
+    if (!requireHostPassword(req.query.hostPassword)) {
+      res.status(401).json({ ok: false, error: "Invalid host password" });
+      return;
+    }
+    res.json({ ok: true, items: quizLibrary.listSummaries() });
+  });
+
+  app.get("/api/quizzes/library/:id", (req, res) => {
+    if (!requireHostPassword(req.query.hostPassword)) {
+      res.status(401).json({ ok: false, error: "Invalid host password" });
+      return;
+    }
+    const row = quizLibrary.getById(String(req.params.id || ""));
+    if (!row) {
+      res.status(404).json({ ok: false, error: "Saved quiz not found" });
+      return;
+    }
+    res.json({
+      ok: true,
+      id: row.id,
+      name: row.name,
+      quiz: row.quiz,
+      updatedAt: row.updatedAt,
+    });
+  });
+
+  app.post("/api/quizzes/library", (req, res) => {
+    if (!requireHostPassword(req.body?.hostPassword)) {
+      res.status(401).json({ ok: false, error: "Invalid host password" });
+      return;
+    }
+    const quiz = validateQuiz(req.body?.quiz);
+    if (!quiz) {
+      res.status(400).json({ ok: false, error: "Invalid quiz" });
+      return;
+    }
+    const name = String(req.body?.name ?? quiz.title)
+      .trim()
+      .slice(0, 120);
+    const entry = quizLibrary.createEntry(name || quiz.title, quiz);
+    res.json({ ok: true, id: entry.id, name: entry.name });
+  });
+
+  app.put("/api/quizzes/library/:id", (req, res) => {
+    if (!requireHostPassword(req.body?.hostPassword)) {
+      res.status(401).json({ ok: false, error: "Invalid host password" });
+      return;
+    }
+    const id = String(req.params.id || "");
+    if (!quizLibrary.getById(id)) {
+      res.status(404).json({ ok: false, error: "Saved quiz not found" });
+      return;
+    }
+    const quiz = validateQuiz(req.body?.quiz);
+    if (!quiz) {
+      res.status(400).json({ ok: false, error: "Invalid quiz" });
+      return;
+    }
+    const patch = { quiz };
+    if (req.body?.name !== undefined) {
+      const n = String(req.body.name).trim().slice(0, 120);
+      if (n) patch.name = n;
+    }
+    quizLibrary.updateEntry(id, patch);
+    const row = quizLibrary.getById(id);
+    res.json({ ok: true, id: row.id, name: row.name, updatedAt: row.updatedAt });
   });
 
   app.get("/api/health", (_req, res) => {

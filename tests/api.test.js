@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("fs");
+const path = require("path");
 const { createQuizServer } = require("../server/index");
 const {
   games,
@@ -87,6 +89,61 @@ test("host session requires password and returns auth tokens", async () => {
     assert.ok(body.hostToken);
   } finally {
     games.clear();
+    await stopServer(svc.server);
+  }
+});
+
+const sampleQuiz = {
+  title: "LibTest",
+  questions: [{ text: "Q1?", choices: ["A", "B"], correctIndex: 0, timeSec: 10 }],
+};
+
+test("quiz library rejects bad password", async () => {
+  const svc = await startServer();
+  try {
+    const res = await fetch(`${svc.baseUrl}/api/quizzes/library`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostPassword: "wrong", name: "X", quiz: sampleQuiz }),
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    await stopServer(svc.server);
+  }
+});
+
+test("quiz library save list and update", async () => {
+  const svc = await startServer();
+  const libPath = path.join(__dirname, "..", ".data", "saved-quizzes.json");
+  try {
+    if (fs.existsSync(libPath)) fs.unlinkSync(libPath);
+
+    const post = await fetch(`${svc.baseUrl}/api/quizzes/library`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostPassword: HOST_PASSWORD, name: "My Quiz", quiz: sampleQuiz }),
+    });
+    assert.equal(post.status, 200);
+    const created = await post.json();
+    assert.ok(created.id);
+
+    const list = await fetch(`${svc.baseUrl}/api/quizzes/library?hostPassword=${encodeURIComponent(HOST_PASSWORD)}`);
+    assert.equal(list.status, 200);
+    const listJson = await list.json();
+    assert.equal(listJson.items.length, 1);
+
+    const updatedQuiz = {
+      title: "LibTest2",
+      questions: [{ text: "Q2?", choices: ["X", "Y"], correctIndex: 1, timeSec: 15 }],
+    };
+    const put = await fetch(`${svc.baseUrl}/api/quizzes/library/${encodeURIComponent(created.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostPassword: HOST_PASSWORD, name: "Renamed", quiz: updatedQuiz }),
+    });
+    assert.equal(put.status, 200);
+  } finally {
+    if (fs.existsSync(libPath)) fs.unlinkSync(libPath);
     await stopServer(svc.server);
   }
 });

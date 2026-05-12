@@ -46,6 +46,36 @@
         <textarea id="quizJson" placeholder='{"title":"WoW-CSG Quiz","questions":[{"text":"Q1?","choices":["A","B","C","D"],"correctIndex":0,"timeSec":20}]}'></textarea>
       </details>
 
+      <details class="advanced" style="margin-top: 16px">
+        <summary>Saved quizzes (library)</summary>
+        <p class="fineprint" style="margin-bottom: 10px">
+          Quizzes are stored on the server for this app instance. Enter your host password, refresh the list, load a quiz into the editor, then save as new or update the one you loaded.
+        </p>
+        <div class="row-2">
+          <div>
+            <label for="savedQuizSelect">Load saved</label>
+            <select id="savedQuizSelect">
+              <option value="">— Choose a saved quiz —</option>
+            </select>
+          </div>
+          <div>
+            <label for="librarySaveName">Library name</label>
+            <input id="librarySaveName" type="text" maxlength="120" placeholder="Defaults to quiz title" />
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top: 10px">
+          <button type="button" class="btn ghost" id="btnRefreshSaved">Refresh list</button>
+          <button type="button" class="btn ghost" id="btnLoadSaved">Load into editor</button>
+          <button type="button" class="btn ghost" id="btnSaveLibrary">Save as new in library</button>
+          <button type="button" class="btn ghost" id="btnUpdateLibrary" disabled>Update saved quiz</button>
+        </div>
+        <p class="fineprint" id="libraryStatus" style="margin-top: 8px"></p>
+        <label class="fineprint" style="display: flex; gap: 8px; align-items: center; margin-top: 8px; cursor: pointer">
+          <input type="checkbox" id="chkSaveOnCreate" checked />
+          After I create a game, also save this quiz to the library
+        </label>
+      </details>
+
       <p id="setupErr" class="error hidden"></p>
       <button type="button" class="btn primary" id="btnCreate">Create game</button>
     </div>
@@ -55,6 +85,7 @@
       <p class="lede" style="margin-bottom: 8px">Players open <strong>Join a game</strong> and enter this PIN:</p>
       <div class="pin-display" id="pinDisplay">------</div>
       <p class="fineprint" id="joinHint"></p>
+      <p id="lobbyLibraryNote" class="fineprint hidden" style="margin-top: 8px"></p>
       <p class="lede" style="margin-top: 16px; margin-bottom: 8px">Players (<span id="pc">0</span> / <span id="maxPlayersLabel">5000</span>)</p>
       <p class="fineprint">Connected now: <span id="connectedPc">0</span></p>
       <ul class="player-list" id="plist"></ul>

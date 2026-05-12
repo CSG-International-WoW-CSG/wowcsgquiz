@@ -36,6 +36,18 @@
   const btnAnalytics = $("btnAnalytics");
   const analyticsPanel = $("analyticsPanel");
   const analyticsText = $("analyticsText");
+  const savedQuizSelect = $("savedQuizSelect");
+  const librarySaveName = $("librarySaveName");
+  const btnRefreshSaved = $("btnRefreshSaved");
+  const btnLoadSaved = $("btnLoadSaved");
+  const btnSaveLibrary = $("btnSaveLibrary");
+  const btnUpdateLibrary = $("btnUpdateLibrary");
+  const libraryStatus = $("libraryStatus");
+  const chkSaveOnCreate = $("chkSaveOnCreate");
+  const lobbyLibraryNote = $("lobbyLibraryNote");
+
+  /** @type {string | null} */
+  let loadedSavedQuizId = null;
 
   const SAMPLE_QUIZ = {
     title: "WoW-CSG Quiz",
@@ -119,9 +131,23 @@
     const qid = newQid();
     const text = pref?.text ?? "";
     const timeSec = pref?.timeSec ?? 20;
-    const choices = pref?.choices ?? ["", "", "", ""];
-    while (choices.length < 4) choices.push("");
-    const correct = Math.min(3, Math.max(0, Number(pref?.correctIndex) || 0));
+    let choices = Array.isArray(pref?.choices) ? [...pref.choices] : [];
+    let numSlots = 4;
+    if (choices.length > 0) {
+      numSlots = Math.min(8, Math.max(2, choices.length));
+    }
+    while (choices.length < numSlots) choices.push("");
+    choices = choices.slice(0, numSlots);
+    const correct = Math.min(numSlots - 1, Math.max(0, Number(pref?.correctIndex) || 0));
+
+    const choiceRows = [];
+    for (let i = 0; i < numSlots; i++) {
+      choiceRows.push(`
+        <div class="choice-row">
+          <input type="radio" name="correct_${qid}" value="${i}" ${i === correct ? "checked" : ""} aria-label="Correct answer ${i + 1}" />
+          <input class="q-choice" type="text" maxlength="200" placeholder="Answer ${i + 1}" data-slot="${i}" value="" />
+        </div>`);
+    }
 
     const section = document.createElement("section");
     section.className = "builder-q";
@@ -141,15 +167,7 @@
         </div>
       </div>
       <p class="fineprint" style="margin:0 0 8px">Answers — select the correct one (fill at least two, from top to bottom)</p>
-      ${[0, 1, 2, 3]
-        .map(
-          (i) => `
-        <div class="choice-row">
-          <input type="radio" name="correct_${qid}" value="${i}" ${i === correct ? "checked" : ""} aria-label="Correct answer ${i + 1}" />
-          <input class="q-choice" type="text" maxlength="200" placeholder="Answer ${i + 1}" data-slot="${i}" value="" />
-        </div>`
-        )
-        .join("")}
+      ${choiceRows.join("")}
     `;
     section.querySelector(".q-text").value = text;
     section.querySelector(".q-time").value = String(timeSec);
@@ -172,7 +190,177 @@
     quizBuilder.innerHTML = "";
   }
 
+  function syncUpdateLibraryButton() {
+    if (btnUpdateLibrary) btnUpdateLibrary.disabled = !loadedSavedQuizId;
+  }
+
+  function setLibraryStatus(msg) {
+    if (libraryStatus) libraryStatus.textContent = msg || "";
+  }
+
+  /** @param {{ title?: string, questions: object[] }} quiz */
+  function applyQuizToForm(quiz) {
+    clearBuilder();
+    quizJson.value = "";
+    quizTitle.value = (quiz && quiz.title) || "WoW-CSG Quiz";
+    const qs = Array.isArray(quiz?.questions) ? quiz.questions : [];
+    if (!qs.length) addQuestion();
+    else qs.forEach((q) => addQuestion(q));
+    renumberQuestions();
+  }
+
+  /** @returns {{ ok: true, quiz: object } | { ok: false, error: string }} */
+  function getCurrentQuizFromEditor() {
+    const rawJson = quizJson.value.trim();
+    if (rawJson) {
+      try {
+        const quiz = JSON.parse(rawJson);
+        if (!quiz || typeof quiz !== "object" || !Array.isArray(quiz.questions)) {
+          return { ok: false, error: 'JSON must be an object with a "questions" array (same shape as the API).' };
+        }
+        return { ok: true, quiz };
+      } catch {
+        return { ok: false, error: "Invalid JSON in advanced import" };
+      }
+    }
+    return buildQuizFromForm();
+  }
+
+  async function refreshSavedQuizList() {
+    const pw = hostPasswordInput.value;
+    if (!pw) {
+      setLibraryStatus("Enter host password, then refresh.");
+      return;
+    }
+    setLibraryStatus("Loading…");
+    try {
+      const res = await fetch(`/api/quizzes/library?hostPassword=${encodeURIComponent(pw)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLibraryStatus(data.error || "Could not load list.");
+        return;
+      }
+      const items = data.items || [];
+      savedQuizSelect.innerHTML = '<option value="">— Choose a saved quiz —</option>';
+      items.forEach((row) => {
+        const opt = document.createElement("option");
+        opt.value = row.id;
+        const when = row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "";
+        opt.textContent = `${row.name} (${row.questionCount} Q)${when ? " · " + when : ""}`;
+        savedQuizSelect.appendChild(opt);
+      });
+      if (loadedSavedQuizId) {
+        savedQuizSelect.value = loadedSavedQuizId;
+      }
+      setLibraryStatus(items.length ? `${items.length} saved quiz(es).` : "No saved quizzes yet.");
+    } catch {
+      setLibraryStatus("Could not load list.");
+    }
+  }
+
+  async function loadSavedQuizIntoEditor() {
+    const id = savedQuizSelect.value;
+    const pw = hostPasswordInput.value;
+    if (!id) {
+      setLibraryStatus("Pick a saved quiz from the list.");
+      return;
+    }
+    if (!pw) {
+      setLibraryStatus("Enter host password first.");
+      return;
+    }
+    setLibraryStatus("Loading…");
+    try {
+      const res = await fetch(`/api/quizzes/library/${encodeURIComponent(id)}?hostPassword=${encodeURIComponent(pw)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLibraryStatus(data.error || "Could not load.");
+        return;
+      }
+      loadedSavedQuizId = data.id;
+      librarySaveName.value = data.name || "";
+      applyQuizToForm(data.quiz);
+      syncUpdateLibraryButton();
+      setLibraryStatus("Loaded. Edit the form, then use “Update saved quiz” to save changes.");
+    } catch {
+      setLibraryStatus("Could not load.");
+    }
+  }
+
+  async function saveQuizToLibraryAsNew() {
+    const pw = hostPasswordInput.value;
+    if (!pw) {
+      setLibraryStatus("Enter host password first.");
+      return;
+    }
+    const got = getCurrentQuizFromEditor();
+    if (!got.ok) {
+      setLibraryStatus(got.error);
+      return;
+    }
+    const name = librarySaveName.value.trim() || got.quiz.title || "Untitled";
+    setLibraryStatus("Saving…");
+    try {
+      const res = await fetch("/api/quizzes/library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hostPassword: pw, name, quiz: got.quiz }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLibraryStatus(data.error || "Save failed.");
+        return;
+      }
+      loadedSavedQuizId = data.id;
+      librarySaveName.value = data.name || name;
+      syncUpdateLibraryButton();
+      await refreshSavedQuizList();
+      savedQuizSelect.value = loadedSavedQuizId;
+      setLibraryStatus("Saved as new library entry.");
+    } catch {
+      setLibraryStatus("Save failed.");
+    }
+  }
+
+  async function updateSavedQuizInLibrary() {
+    if (!loadedSavedQuizId) return;
+    const pw = hostPasswordInput.value;
+    if (!pw) {
+      setLibraryStatus("Enter host password first.");
+      return;
+    }
+    const got = getCurrentQuizFromEditor();
+    if (!got.ok) {
+      setLibraryStatus(got.error);
+      return;
+    }
+    const name = librarySaveName.value.trim();
+    setLibraryStatus("Updating…");
+    try {
+      const body = { hostPassword: pw, quiz: got.quiz };
+      if (name) body.name = name;
+      const res = await fetch(`/api/quizzes/library/${encodeURIComponent(loadedSavedQuizId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLibraryStatus(data.error || "Update failed.");
+        return;
+      }
+      if (data.name) librarySaveName.value = data.name;
+      await refreshSavedQuizList();
+      savedQuizSelect.value = loadedSavedQuizId;
+      setLibraryStatus("Saved quiz updated.");
+    } catch {
+      setLibraryStatus("Update failed.");
+    }
+  }
+
   function loadSampleIntoForm() {
+    loadedSavedQuizId = null;
+    syncUpdateLibraryButton();
     clearBuilder();
     quizTitle.value = SAMPLE_QUIZ.title;
     SAMPLE_QUIZ.questions.forEach((q) => addQuestion(q));
@@ -192,7 +380,7 @@
 
       const slots = [...block.querySelectorAll(".q-choice")].map((inp) => inp.value.trim());
       let last = -1;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < slots.length; i++) {
         if (slots[i]) last = i;
       }
       if (last < 1) return { ok: false, error: `Question ${b + 1}: enter at least two answers (top to bottom)` };
@@ -225,6 +413,18 @@
 
   btnAddQ.addEventListener("click", () => addQuestion());
   btnLoadSample.addEventListener("click", () => loadSampleIntoForm());
+
+  savedQuizSelect.addEventListener("change", () => {
+    if (!savedQuizSelect.value) {
+      loadedSavedQuizId = null;
+      syncUpdateLibraryButton();
+    }
+  });
+
+  btnRefreshSaved.addEventListener("click", () => refreshSavedQuizList());
+  btnLoadSaved.addEventListener("click", () => loadSavedQuizIntoEditor());
+  btnSaveLibrary.addEventListener("click", () => saveQuizToLibraryAsNew());
+  btnUpdateLibrary.addEventListener("click", () => updateSavedQuizInLibrary());
 
   addQuestion();
 
@@ -372,28 +572,15 @@
   btnCreate.addEventListener("click", async () => {
     window.QuizMusic?.unlock?.();
     setError(setupErr, "");
-    let quiz;
+    show(lobbyLibraryNote, false);
+    lobbyLibraryNote.textContent = "";
 
-    const rawJson = quizJson.value.trim();
-    if (rawJson) {
-      try {
-        quiz = JSON.parse(rawJson);
-      } catch {
-        setError(setupErr, "Invalid JSON in advanced import");
-        return;
-      }
-      if (!quiz || typeof quiz !== "object" || !Array.isArray(quiz.questions)) {
-        setError(setupErr, 'JSON must be an object with a "questions" array (same shape as the API).');
-        return;
-      }
-    } else {
-      const built = buildQuizFromForm();
-      if (!built.ok) {
-        setError(setupErr, built.error);
-        return;
-      }
-      quiz = built.quiz;
+    const got = getCurrentQuizFromEditor();
+    if (!got.ok) {
+      setError(setupErr, got.error);
+      return;
     }
+    const quiz = got.quiz;
 
     const res = await fetch("/api/host/session", {
       method: "POST",
@@ -422,6 +609,30 @@
     window.QuizMusic?.setBuilderActive?.(false);
     show(setup, false);
     show(lobby, true);
+
+    if (chkSaveOnCreate.checked) {
+      const pw = hostPasswordInput.value;
+      const libName = librarySaveName.value.trim() || quiz.title || "Untitled";
+      if (pw) {
+        try {
+          const lr = await fetch("/api/quizzes/library", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ hostPassword: pw, name: libName, quiz }),
+          });
+          const libData = await lr.json().catch(() => ({}));
+          if (lr.ok) {
+            loadedSavedQuizId = libData.id || loadedSavedQuizId;
+            syncUpdateLibraryButton();
+            lobbyLibraryNote.textContent = `Quiz also saved to library as “${libData.name || libName}”.`;
+            show(lobbyLibraryNote, true);
+          }
+        } catch {
+          /* ignore library save errors in lobby */
+        }
+      }
+    }
+
     connectSocket();
   });
 
