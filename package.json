@@ -5,7 +5,8 @@
   "description": "Real-time quiz host + player clients (Kahoot-style). Run: npm install && npm start",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "load-test": "node scripts/socket-load-test.js"
   },
   "engines": {
     "node": ">=18"
@@ -13,5 +14,8 @@
   "dependencies": {
     "express": "^4.21.2",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
   }
 }
