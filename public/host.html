@@ -49,9 +49,11 @@
       <details class="advanced" style="margin-top: 16px">
         <summary>Saved quizzes (library)</summary>
         <p class="fineprint" style="margin-bottom: 10px">
-          Quizzes are stored on the server for this app instance. Enter your host password, refresh the list, load a quiz into the editor, then save as new or update the one you loaded.
+          Quizzes are stored on the server for this app instance. Enter the host password below, then refresh the list. You can load a quiz into the editor, save as new, or update the one you loaded.
         </p>
-        <div class="row-2">
+        <label for="libraryHostPassword">Host password</label>
+        <input id="libraryHostPassword" type="password" maxlength="100" autocomplete="off" placeholder="Required to refresh list / load / save" />
+        <div class="row-2" style="margin-top: 12px">
           <div>
             <label for="savedQuizSelect">Load saved</label>
             <select id="savedQuizSelect">

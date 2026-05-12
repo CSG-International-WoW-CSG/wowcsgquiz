@@ -30,6 +30,15 @@
   const quizTitle = $("quizTitle");
   const hostNameInput = $("hostName");
   const hostPasswordInput = $("hostPassword");
+  const libraryHostPasswordInput = $("libraryHostPassword");
+
+  /** Password from the library section field, or the top-of-form host password (same server password). */
+  function effectiveHostPassword() {
+    const lib = libraryHostPasswordInput?.value?.trim() ?? "";
+    const main = hostPasswordInput?.value?.trim() ?? "";
+    return lib || main;
+  }
+
   const quizJson = $("quizJson");
   const btnAddQ = $("btnAddQ");
   const btnLoadSample = $("btnLoadSample");
@@ -228,9 +237,9 @@
   }
 
   async function refreshSavedQuizList() {
-    const pw = hostPasswordInput.value;
+    const pw = effectiveHostPassword();
     if (!pw) {
-      setLibraryStatus("Enter host password, then refresh.");
+      setLibraryStatus("Enter the host password in this section (or at the top), then refresh.");
       return;
     }
     setLibraryStatus("Loading…");
@@ -261,13 +270,13 @@
 
   async function loadSavedQuizIntoEditor() {
     const id = savedQuizSelect.value;
-    const pw = hostPasswordInput.value;
+    const pw = effectiveHostPassword();
     if (!id) {
       setLibraryStatus("Pick a saved quiz from the list.");
       return;
     }
     if (!pw) {
-      setLibraryStatus("Enter host password first.");
+      setLibraryStatus("Enter the host password in this section (or at the top).");
       return;
     }
     setLibraryStatus("Loading…");
@@ -289,9 +298,9 @@
   }
 
   async function saveQuizToLibraryAsNew() {
-    const pw = hostPasswordInput.value;
+    const pw = effectiveHostPassword();
     if (!pw) {
-      setLibraryStatus("Enter host password first.");
+      setLibraryStatus("Enter the host password in this section (or at the top).");
       return;
     }
     const got = getCurrentQuizFromEditor();
@@ -325,9 +334,9 @@
 
   async function updateSavedQuizInLibrary() {
     if (!loadedSavedQuizId) return;
-    const pw = hostPasswordInput.value;
+    const pw = effectiveHostPassword();
     if (!pw) {
-      setLibraryStatus("Enter host password first.");
+      setLibraryStatus("Enter the host password in this section (or at the top).");
       return;
     }
     const got = getCurrentQuizFromEditor();
@@ -594,7 +603,7 @@
       body: JSON.stringify({
         quiz,
         hostName: hostNameInput.value.trim() || "Host",
-        hostPassword: hostPasswordInput.value,
+        hostPassword: effectiveHostPassword(),
       }),
     });
     if (!res.ok) {
@@ -617,7 +626,7 @@
     show(lobby, true);
 
     if (chkSaveOnCreate.checked) {
-      const pw = hostPasswordInput.value;
+      const pw = effectiveHostPassword();
       const libName = librarySaveName.value.trim() || quiz.title || "Untitled";
       if (pw) {
         try {
