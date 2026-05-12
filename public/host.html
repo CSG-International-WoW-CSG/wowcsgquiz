@@ -49,7 +49,7 @@
       <details class="advanced" style="margin-top: 16px">
         <summary>Saved quizzes (library)</summary>
         <p class="fineprint" style="margin-bottom: 10px">
-          Quizzes are stored on the server for this app instance. Enter the host password below, then refresh the list. You can load a quiz into the editor, save as new, or update the one you loaded.
+          Quizzes are stored on the server for this app instance. Enter the host password below, then refresh the list. You can load a quiz into the editor, <strong>host the selected quiz in one step</strong>, save as new, or update the one you loaded.
         </p>
         <label for="libraryHostPassword">Host password</label>
         <input id="libraryHostPassword" type="password" maxlength="100" autocomplete="off" placeholder="Required to refresh list / load / save" />
@@ -68,9 +68,13 @@
         <div class="toolbar" style="margin-top: 10px">
           <button type="button" class="btn ghost" id="btnRefreshSaved">Refresh list</button>
           <button type="button" class="btn ghost" id="btnLoadSaved">Load into editor</button>
+          <button type="button" class="btn primary" id="btnHostSelectedQuiz" disabled>Host selected quiz</button>
           <button type="button" class="btn ghost" id="btnSaveLibrary">Save as new in library</button>
           <button type="button" class="btn ghost" id="btnUpdateLibrary" disabled>Update saved quiz</button>
         </div>
+        <p class="fineprint" style="margin-top: 8px">
+          After you refresh the list and pick a saved quiz, <strong>Host selected quiz</strong> opens the lobby immediately (same as Create game, without filling the editor first).
+        </p>
         <p class="fineprint" id="libraryStatus" style="margin-top: 8px"></p>
         <label class="fineprint" style="display: flex; gap: 8px; align-items: center; margin-top: 8px; cursor: pointer">
           <input type="checkbox" id="chkSaveOnCreate" checked />

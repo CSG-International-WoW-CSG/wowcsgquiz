@@ -50,6 +50,7 @@
   const librarySaveName = $("librarySaveName");
   const btnRefreshSaved = $("btnRefreshSaved");
   const btnLoadSaved = $("btnLoadSaved");
+  const btnHostSelectedQuiz = $("btnHostSelectedQuiz");
   const btnSaveLibrary = $("btnSaveLibrary");
   const btnUpdateLibrary = $("btnUpdateLibrary");
   const libraryStatus = $("libraryStatus");
@@ -204,6 +205,10 @@
     if (btnUpdateLibrary) btnUpdateLibrary.disabled = !loadedSavedQuizId;
   }
 
+  function syncHostSelectedQuizButton() {
+    if (btnHostSelectedQuiz) btnHostSelectedQuiz.disabled = !savedQuizSelect.value;
+  }
+
   function setLibraryStatus(msg) {
     if (libraryStatus) libraryStatus.textContent = msg || "";
   }
@@ -263,6 +268,7 @@
         savedQuizSelect.value = loadedSavedQuizId;
       }
       setLibraryStatus(items.length ? `${items.length} saved quiz(es).` : "No saved quizzes yet.");
+      syncHostSelectedQuizButton();
     } catch {
       setLibraryStatus("Could not load list.");
     }
@@ -329,6 +335,110 @@
       setLibraryStatus("Saved as new library entry.");
     } catch {
       setLibraryStatus("Save failed.");
+    }
+  }
+
+  /**
+   * Create a room with the given quiz and join the lobby (shared by Create game and Host from library).
+   * @param {object} quiz
+   * @param {{ fromLibrary?: boolean }} [opts]
+   * @returns {Promise<boolean>} true if the session was created
+   */
+  async function createHostSessionWithQuiz(quiz, opts = {}) {
+    window.QuizMusic?.unlock?.();
+    setError(setupErr, "");
+    show(lobbyLibraryNote, false);
+    lobbyLibraryNote.textContent = "";
+
+    const res = await fetch("/api/host/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        quiz,
+        hostName: hostNameInput.value.trim() || "Host",
+        hostPassword: effectiveHostPassword(),
+      }),
+    });
+    if (!res.ok) {
+      const maybe = await res.json().catch(() => ({}));
+      setError(setupErr, maybe.error || "Server error");
+      return false;
+    }
+    const data = await res.json();
+    pin = data.pin;
+    hostSecret = data.hostSecret;
+    hostToken = data.hostToken || "";
+    try {
+      localStorage.setItem("quiz_host_token", hostToken);
+    } catch {}
+    pinDisplay.textContent = pin;
+    const base = `${window.location.origin}`;
+    joinHint.innerHTML = `Player link: <a href="${base}/play.html?pin=${pin}" style="color:#00cec9">${base}/play.html?pin=${pin}</a>`;
+    window.QuizMusic?.setBuilderActive?.(false);
+    show(setup, false);
+    show(lobby, true);
+
+    if (chkSaveOnCreate.checked && !opts.fromLibrary) {
+      const pw = effectiveHostPassword();
+      const libName = librarySaveName.value.trim() || quiz.title || "Untitled";
+      if (pw) {
+        try {
+          const lr = await fetch("/api/quizzes/library", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ hostPassword: pw, name: libName, quiz }),
+          });
+          const libData = await lr.json().catch(() => ({}));
+          if (lr.ok) {
+            loadedSavedQuizId = libData.id || loadedSavedQuizId;
+            syncUpdateLibraryButton();
+            lobbyLibraryNote.textContent = `Quiz also saved to library as “${libData.name || libName}”.`;
+            show(lobbyLibraryNote, true);
+          }
+        } catch {
+          /* ignore library save errors in lobby */
+        }
+      }
+    }
+
+    connectSocket();
+    return true;
+  }
+
+  async function hostSelectedSavedQuiz() {
+    setError(setupErr, "");
+    const id = savedQuizSelect.value;
+    const pw = effectiveHostPassword();
+    if (!id) {
+      setLibraryStatus("Pick a saved quiz from the list.");
+      return;
+    }
+    if (!pw) {
+      setLibraryStatus("Enter the host password in this section (or at the top).");
+      return;
+    }
+    setLibraryStatus("Loading quiz and starting session…");
+    try {
+      const res = await fetch(`/api/quizzes/library/${encodeURIComponent(id)}?hostPassword=${encodeURIComponent(pw)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLibraryStatus(data.error || "Could not load that quiz.");
+        return;
+      }
+      const quiz = data.quiz;
+      if (!quiz || !Array.isArray(quiz.questions) || !quiz.questions.length) {
+        setLibraryStatus("That saved quiz has no questions.");
+        return;
+      }
+      loadedSavedQuizId = data.id || id;
+      if (data.name) librarySaveName.value = data.name;
+      quizTitle.value = (quiz && quiz.title) || quizTitle.value;
+      syncUpdateLibraryButton();
+      const ok = await createHostSessionWithQuiz(quiz, { fromLibrary: true });
+      if (!ok) setLibraryStatus("Could not create game session. Check the message above.");
+      else setLibraryStatus("");
+    } catch {
+      setLibraryStatus("Could not start hosting.");
     }
   }
 
@@ -429,14 +539,17 @@
       loadedSavedQuizId = null;
       syncUpdateLibraryButton();
     }
+    syncHostSelectedQuizButton();
   });
 
   btnRefreshSaved.addEventListener("click", () => refreshSavedQuizList());
   btnLoadSaved.addEventListener("click", () => loadSavedQuizIntoEditor());
+  if (btnHostSelectedQuiz) btnHostSelectedQuiz.addEventListener("click", () => hostSelectedSavedQuiz());
   btnSaveLibrary.addEventListener("click", () => saveQuizToLibraryAsNew());
   btnUpdateLibrary.addEventListener("click", () => updateSavedQuizInLibrary());
 
   addQuestion();
+  syncHostSelectedQuizButton();
 
   function connectSocket() {
     socket = io({ transports: ["websocket", "polling"] });
@@ -596,70 +709,12 @@
   }
 
   btnCreate.addEventListener("click", async () => {
-    window.QuizMusic?.unlock?.();
-    setError(setupErr, "");
-    show(lobbyLibraryNote, false);
-    lobbyLibraryNote.textContent = "";
-
     const got = getCurrentQuizFromEditor();
     if (!got.ok) {
       setError(setupErr, got.error);
       return;
     }
-    const quiz = got.quiz;
-
-    const res = await fetch("/api/host/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        quiz,
-        hostName: hostNameInput.value.trim() || "Host",
-        hostPassword: effectiveHostPassword(),
-      }),
-    });
-    if (!res.ok) {
-      const maybe = await res.json().catch(() => ({}));
-      setError(setupErr, maybe.error || "Server error");
-      return;
-    }
-    const data = await res.json();
-    pin = data.pin;
-    hostSecret = data.hostSecret;
-    hostToken = data.hostToken || "";
-    try {
-      localStorage.setItem("quiz_host_token", hostToken);
-    } catch {}
-    pinDisplay.textContent = pin;
-    const base = `${window.location.origin}`;
-    joinHint.innerHTML = `Player link: <a href="${base}/play.html?pin=${pin}" style="color:#00cec9">${base}/play.html?pin=${pin}</a>`;
-    window.QuizMusic?.setBuilderActive?.(false);
-    show(setup, false);
-    show(lobby, true);
-
-    if (chkSaveOnCreate.checked) {
-      const pw = effectiveHostPassword();
-      const libName = librarySaveName.value.trim() || quiz.title || "Untitled";
-      if (pw) {
-        try {
-          const lr = await fetch("/api/quizzes/library", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ hostPassword: pw, name: libName, quiz }),
-          });
-          const libData = await lr.json().catch(() => ({}));
-          if (lr.ok) {
-            loadedSavedQuizId = libData.id || loadedSavedQuizId;
-            syncUpdateLibraryButton();
-            lobbyLibraryNote.textContent = `Quiz also saved to library as “${libData.name || libName}”.`;
-            show(lobbyLibraryNote, true);
-          }
-        } catch {
-          /* ignore library save errors in lobby */
-        }
-      }
-    }
-
-    connectSocket();
+    await createHostSessionWithQuiz(got.quiz, { fromLibrary: false });
   });
 
   btnStart.addEventListener("click", () => {
