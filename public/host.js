@@ -56,6 +56,7 @@
   const btnHostSelectedQuiz = $("btnHostSelectedQuiz");
   const btnSaveLibrary = $("btnSaveLibrary");
   const btnUpdateLibrary = $("btnUpdateLibrary");
+  const btnDeleteLibrary = $("btnDeleteLibrary");
   const libraryStatus = $("libraryStatus");
   const chkSaveOnCreate = $("chkSaveOnCreate");
   const lobbyLibraryNote = $("lobbyLibraryNote");
@@ -209,7 +210,9 @@
   }
 
   function syncHostSelectedQuizButton() {
-    if (btnHostSelectedQuiz) btnHostSelectedQuiz.disabled = !savedQuizSelect.value;
+    const on = !!savedQuizSelect.value;
+    if (btnHostSelectedQuiz) btnHostSelectedQuiz.disabled = !on;
+    if (btnDeleteLibrary) btnDeleteLibrary.disabled = !on;
   }
 
   function setLibraryStatus(msg) {
@@ -493,6 +496,45 @@
     }
   }
 
+  async function deleteSelectedSavedQuiz() {
+    const id = savedQuizSelect.value;
+    if (!id) {
+      setLibraryStatus("Pick a saved quiz from the list.");
+      return;
+    }
+    const pw = libraryAdminPassword();
+    if (!pw) {
+      setLibraryStatus("Enter the library admin password in the Saved quizzes section.");
+      return;
+    }
+    const opt = savedQuizSelect.selectedOptions[0];
+    const label = opt?.textContent?.trim() || id;
+    if (!confirm(`Delete this saved quiz from the library?\n\n${label}\n\nThis cannot be undone.`)) {
+      return;
+    }
+    setLibraryStatus("Deleting…");
+    try {
+      const res = await fetch(
+        `/api/quizzes/library/${encodeURIComponent(id)}?hostPassword=${encodeURIComponent(pw)}`,
+        { method: "DELETE" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLibraryStatus(data.error || "Delete failed.");
+        return;
+      }
+      if (loadedSavedQuizId === id) {
+        loadedSavedQuizId = null;
+        librarySaveName.value = "";
+        syncUpdateLibraryButton();
+      }
+      await refreshSavedQuizList();
+      setLibraryStatus("Saved quiz removed.");
+    } catch {
+      setLibraryStatus("Delete failed.");
+    }
+  }
+
   function loadSampleIntoForm() {
     loadedSavedQuizId = null;
     syncUpdateLibraryButton();
@@ -562,6 +604,7 @@
   if (btnHostSelectedQuiz) btnHostSelectedQuiz.addEventListener("click", () => hostSelectedSavedQuiz());
   btnSaveLibrary.addEventListener("click", () => saveQuizToLibraryAsNew());
   btnUpdateLibrary.addEventListener("click", () => updateSavedQuizInLibrary());
+  if (btnDeleteLibrary) btnDeleteLibrary.addEventListener("click", () => deleteSelectedSavedQuiz());
 
   addQuestion();
   syncHostSelectedQuizButton();

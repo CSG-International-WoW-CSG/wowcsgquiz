@@ -377,6 +377,20 @@ function createQuizServer() {
     res.json({ ok: true, id: row.id, name: row.name, updatedAt: row.updatedAt });
   });
 
+  app.delete("/api/quizzes/library/:id", (req, res) => {
+    if (!requireHostPassword(req.query.hostPassword)) {
+      res.status(401).json({ ok: false, error: "Invalid host password" });
+      return;
+    }
+    const id = String(req.params.id || "");
+    if (!quizLibrary.getById(id)) {
+      res.status(404).json({ ok: false, error: "Saved quiz not found" });
+      return;
+    }
+    quizLibrary.deleteById(id);
+    res.json({ ok: true, id });
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });
   });

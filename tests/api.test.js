@@ -149,6 +149,21 @@ test("quiz library save list and update", async () => {
       body: JSON.stringify({ hostPassword: HOST_PASSWORD, name: "Renamed", quiz: updatedQuiz }),
     });
     assert.equal(put.status, 200);
+
+    const del = await fetch(
+      `${svc.baseUrl}/api/quizzes/library/${encodeURIComponent(created.id)}?hostPassword=${encodeURIComponent(HOST_PASSWORD)}`,
+      { method: "DELETE" }
+    );
+    assert.equal(del.status, 200);
+    const delBody = await del.json();
+    assert.equal(delBody.ok, true);
+
+    const listAfter = await fetch(
+      `${svc.baseUrl}/api/quizzes/library?hostPassword=${encodeURIComponent(HOST_PASSWORD)}`
+    );
+    assert.equal(listAfter.status, 200);
+    const afterJson = await listAfter.json();
+    assert.equal(afterJson.items.length, 0);
   } finally {
     if (fs.existsSync(libPath)) fs.unlinkSync(libPath);
     await stopServer(svc.server);

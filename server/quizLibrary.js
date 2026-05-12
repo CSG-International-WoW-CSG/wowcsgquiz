@@ -71,9 +71,20 @@ function updateEntry(id, patch) {
   return db.items[i];
 }
 
+/** @returns {boolean} true if an entry was removed */
+function deleteById(id) {
+  const db = readDb();
+  const before = db.items.length;
+  db.items = db.items.filter((x) => x.id !== id);
+  if (db.items.length === before) return false;
+  writeDb(db);
+  return true;
+}
+
 module.exports = {
   listSummaries,
   getById,
   createEntry,
   updateEntry,
+  deleteById,
 };
