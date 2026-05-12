@@ -97,6 +97,46 @@
     return `quiz_player_token_${pinValue}`;
   }
 
+  /** Per-tab storage so two tabs (or two people on one browser) joining the same PIN become separate players. */
+  function playerTokenStore() {
+    try {
+      return window.sessionStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  function readPlayerToken(pinValue) {
+    const s = playerTokenStore();
+    if (!s) return "";
+    try {
+      return s.getItem(tokenStorageKey(pinValue)) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function writePlayerToken(pinValue, token) {
+    const s = playerTokenStore();
+    if (!s) return;
+    try {
+      s.setItem(tokenStorageKey(pinValue), token);
+    } catch {}
+  }
+
+  /** Clear token for this PIN; also remove legacy localStorage key from older builds. */
+  function clearPlayerToken(pinValue) {
+    const s = playerTokenStore();
+    if (s) {
+      try {
+        s.removeItem(tokenStorageKey(pinValue));
+      } catch {}
+    }
+    try {
+      window.localStorage?.removeItem?.(tokenStorageKey(pinValue));
+    } catch {}
+  }
+
   function renderQuestionView(payload) {
     stopRevealCountdown();
     window.QuizMusic?.setSessionActive?.(true);
@@ -195,9 +235,7 @@
 
     sock.on("game:ended", () => {
       window.QuizMusic?.setSessionActive?.(false);
-      try {
-        localStorage.removeItem(tokenStorageKey(pin));
-      } catch {}
+      clearPlayerToken(pin);
       window.location.href = "/play.html";
     });
 
@@ -251,7 +289,7 @@
       return;
     }
     try {
-      playerToken = localStorage.getItem(tokenStorageKey(pin)) || "";
+      playerToken = readPlayerToken(pin);
     } catch {
       playerToken = "";
     }
@@ -269,9 +307,7 @@
       }
       if (res.playerId) {
         playerToken = res.playerId;
-        try {
-          localStorage.setItem(tokenStorageKey(pin), playerToken);
-        } catch {}
+        writePlayerToken(pin, playerToken);
       }
       waitTitle.textContent = res.title || "";
       show(join, false);
