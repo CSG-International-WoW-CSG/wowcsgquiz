@@ -57,9 +57,10 @@
     ptimer.textContent = "";
   }
 
-  function startTimer(sec) {
+  /** @param {number} sec fallback duration @param {number} [endsAt] wall-clock ms when round ends (server) */
+  function startTimer(sec, endsAt) {
     stopTimer();
-    const end = Date.now() + sec * 1000;
+    const end = typeof endsAt === "number" && endsAt > 0 ? endsAt : Date.now() + sec * 1000;
     const tick = () => {
       const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
       ptimer.textContent = `${left}s`;
@@ -71,6 +72,123 @@
 
   function tokenStorageKey(pinValue) {
     return `quiz_player_token_${pinValue}`;
+  }
+
+  function renderQuestionView(payload) {
+    window.QuizMusic?.setSessionActive?.(true);
+    window.QuizMusic?.playBackdrop?.();
+    currentQ = payload.questionIndex;
+    show(wait, false);
+    show(play, true);
+    show(reveal, false);
+    playMeta.textContent = `Question ${payload.questionIndex + 1} of ${payload.total}`;
+    pq.textContent = payload.text;
+    pchoices.innerHTML = "";
+    let answered = false;
+    payload.choices.forEach((c, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `choice-btn c${i % 8}`;
+      b.textContent = c;
+      b.addEventListener("click", () => {
+        if (answered) return;
+        answered = true;
+        [...pchoices.children].forEach((x) => {
+          x.disabled = true;
+        });
+        socket?.emit("player:answer", { pin, questionIndex: payload.questionIndex, choiceIndex: i });
+      });
+      pchoices.appendChild(b);
+    });
+    startTimer(payload.timeSec, payload.endsAt);
+  }
+
+  function wirePlayerSocketHandlers(sock) {
+    sock.on("round:question", (payload) => {
+      renderQuestionView(payload);
+    });
+
+    sock.on("player:answerAck", () => {});
+
+    sock.on("round:reveal", (payload) => {
+      stopTimer();
+      show(play, false);
+      show(reveal, true);
+      revealTitle.textContent = "Scores";
+      miniLb.innerHTML = "";
+      (payload.leaderboard || []).forEach((row) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
+        miniLb.appendChild(li);
+      });
+    });
+
+    sock.on("game:finished", (payload) => {
+      window.QuizMusic?.setSessionActive?.(false);
+      stopTimer();
+      show(wait, false);
+      show(play, false);
+      show(reveal, false);
+      show(done, true);
+      doneLb.innerHTML = "";
+      (payload.leaderboard || []).forEach((row) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
+        doneLb.appendChild(li);
+      });
+    });
+
+    sock.on("game:ended", () => {
+      window.QuizMusic?.setSessionActive?.(false);
+      try {
+        localStorage.removeItem(tokenStorageKey(pin));
+      } catch {}
+      window.location.href = "/play.html";
+    });
+
+    sock.on("lobby:update", () => {
+      /* keep waiting */
+    });
+  }
+
+  /** Apply server state if join happened mid-round (or after missed broadcast). */
+  function applyJoinSync(sync) {
+    if (!sync || !sync.phase) return;
+    if (sync.phase === "question" && sync.payload) {
+      show(join, false);
+      renderQuestionView(sync.payload);
+      return;
+    }
+    if (sync.phase === "reveal" && sync.payload) {
+      stopTimer();
+      show(join, false);
+      show(wait, false);
+      show(play, false);
+      show(reveal, true);
+      revealTitle.textContent = "Scores";
+      miniLb.innerHTML = "";
+      (sync.payload.leaderboard || []).forEach((row) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
+        miniLb.appendChild(li);
+      });
+      return;
+    }
+    if (sync.phase === "finished" && sync.leaderboard) {
+      stopTimer();
+      window.QuizMusic?.setSessionActive?.(false);
+      show(join, false);
+      show(wait, false);
+      show(play, false);
+      show(reveal, false);
+      show(done, true);
+      doneLb.innerHTML = "";
+      sync.leaderboard.forEach((row) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
+        doneLb.appendChild(li);
+      });
+    }
   }
 
   $("btnJoin").addEventListener("click", () => {
@@ -91,10 +209,14 @@
     } catch {
       playerToken = "";
     }
+
     socket = io({ transports: ["websocket", "polling"] });
+    wirePlayerSocketHandlers(socket);
+
     socket.emit("player:join", { pin, name, playerId: playerToken }, (res) => {
       if (!res?.ok) {
         setError(res?.error || "Could not join");
+        socket?.removeAllListeners?.();
         socket?.close();
         socket = null;
         return;
@@ -107,78 +229,11 @@
       }
       waitTitle.textContent = res.title || "";
       show(join, false);
-      show(wait, true);
-    });
-
-    socket.on("round:question", (payload) => {
-      window.QuizMusic?.setSessionActive?.(true);
-      window.QuizMusic?.playBackdrop?.();
-      currentQ = payload.questionIndex;
-      show(wait, false);
-      show(play, true);
-      show(reveal, false);
-      playMeta.textContent = `Question ${payload.questionIndex + 1} of ${payload.total}`;
-      pq.textContent = payload.text;
-      pchoices.innerHTML = "";
-      let answered = false;
-      payload.choices.forEach((c, i) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = `choice-btn c${i % 8}`;
-        b.textContent = c;
-        b.addEventListener("click", () => {
-          if (answered) return;
-          answered = true;
-          [...pchoices.children].forEach((x) => {
-            x.disabled = true;
-          });
-          socket?.emit("player:answer", { pin, questionIndex: payload.questionIndex, choiceIndex: i });
-        });
-        pchoices.appendChild(b);
-      });
-      startTimer(payload.timeSec);
-    });
-
-    socket.on("player:answerAck", () => {});
-
-    socket.on("round:reveal", (payload) => {
-      stopTimer();
-      show(play, false);
-      show(reveal, true);
-      revealTitle.textContent = "Scores";
-      miniLb.innerHTML = "";
-      (payload.leaderboard || []).forEach((row) => {
-        const li = document.createElement("li");
-        li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
-        miniLb.appendChild(li);
-      });
-    });
-
-    socket.on("game:finished", (payload) => {
-      window.QuizMusic?.setSessionActive?.(false);
-      stopTimer();
-      show(wait, false);
-      show(play, false);
-      show(reveal, false);
-      show(done, true);
-      doneLb.innerHTML = "";
-      (payload.leaderboard || []).forEach((row) => {
-        const li = document.createElement("li");
-        li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
-        doneLb.appendChild(li);
-      });
-    });
-
-    socket.on("game:ended", () => {
-      window.QuizMusic?.setSessionActive?.(false);
-      try {
-        localStorage.removeItem(tokenStorageKey(pin));
-      } catch {}
-      window.location.href = "/play.html";
-    });
-
-    socket.on("lobby:update", () => {
-      /* keep waiting */
+      if (res.sync && res.sync.phase && res.sync.phase !== "lobby") {
+        applyJoinSync(res.sync);
+      } else {
+        show(wait, true);
+      }
     });
   });
 })();

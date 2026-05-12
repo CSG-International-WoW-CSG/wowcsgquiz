@@ -19,6 +19,7 @@
   const btnEndLobby = $("btnEndLobby");
   const btnReveal = $("btnReveal");
   const btnNext = $("btnNext");
+  const btnSkipNext = $("btnSkipNext");
   const revealPanel = $("revealPanel");
   const correctLine = $("correctLine");
   const leaderboard = $("leaderboard");
@@ -430,19 +431,6 @@
 
   function connectSocket() {
     socket = io({ transports: ["websocket", "polling"] });
-    socket.emit("host:join", { pin, hostSecret }, (res) => {
-      if (!res?.ok) {
-        setError(setupErr, res?.error || "Could not connect as host");
-        show(lobby, false);
-        show(setup, true);
-        pin = "";
-        hostSecret = "";
-        socket?.disconnect();
-        socket = null;
-        return;
-      }
-      renderLobby(res.game);
-    });
 
     socket.on("lobby:update", (g) => {
       if (g.pin === pin) renderLobby(g);
@@ -456,6 +444,7 @@
       show(revealPanel, false);
       show(finished, false);
       show(btnReveal, true);
+      show(btnSkipNext, true);
       show(btnNext, false);
       phaseBadge.textContent = "Question";
       qmeta.textContent = `Question ${payload.questionIndex + 1} of ${payload.total}`;
@@ -468,12 +457,13 @@
         d.style.gridColumn = "span 1";
         choicesPreview.appendChild(d);
       });
-      startTimer(payload.timeSec);
+      startTimer(payload.timeSec, payload.endsAt);
     });
 
     socket.on("round:reveal", (payload) => {
       stopTimer();
       show(btnReveal, false);
+      show(btnSkipNext, false);
       show(btnNext, true);
       phaseBadge.textContent = "Answer";
       const letter = String.fromCharCode(65 + payload.correctIndex);
@@ -491,6 +481,7 @@
       window.QuizMusic?.setSessionActive?.(false);
       stopTimer();
       show(btnReveal, false);
+      show(btnSkipNext, false);
       show(btnNext, false);
       show(revealPanel, false);
       phaseBadge.textContent = "Finished";
@@ -505,7 +496,22 @@
 
     socket.on("game:ended", () => {
       window.QuizMusic?.setSessionActive?.(false);
+      show(btnSkipNext, false);
       window.location.href = "/";
+    });
+
+    socket.emit("host:join", { pin, hostSecret }, (res) => {
+      if (!res?.ok) {
+        setError(setupErr, res?.error || "Could not connect as host");
+        show(lobby, false);
+        show(setup, true);
+        pin = "";
+        hostSecret = "";
+        socket?.disconnect();
+        socket = null;
+        return;
+      }
+      renderLobby(res.game);
     });
   }
 
@@ -557,9 +563,9 @@
     timerEl.textContent = "";
   }
 
-  function startTimer(sec) {
+  function startTimer(sec, endsAt) {
     stopTimer();
-    const end = Date.now() + sec * 1000;
+    const end = typeof endsAt === "number" && endsAt > 0 ? endsAt : Date.now() + sec * 1000;
     const tick = () => {
       const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
       timerEl.textContent = `${left}s`;
@@ -654,6 +660,14 @@
 
   btnNext.addEventListener("click", () => {
     socket?.emit("host:next", { pin, hostSecret }, (res) => {
+      if (res?.finished) {
+        show(btnNext, false);
+      }
+    });
+  });
+
+  btnSkipNext.addEventListener("click", () => {
+    socket?.emit("host:skipToNextQuestion", { pin, hostSecret }, (res) => {
       if (res?.finished) {
         show(btnNext, false);
       }

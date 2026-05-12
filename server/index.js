@@ -84,6 +84,56 @@ function roomId(pin) {
 }
 
 /** @param {import('./types').GameSession} game */
+function buildQuestionPayload(game) {
+  const q = game.quiz.questions[game.questionIndex];
+  if (!q) return null;
+  const started = game.questionStartedAt ?? Date.now();
+  const endsAt = started + q.timeSec * 1000;
+  return {
+    questionIndex: game.questionIndex,
+    total: game.quiz.questions.length,
+    text: q.text,
+    choices: q.choices,
+    timeSec: q.timeSec,
+    points: q.points,
+    endsAt,
+    serverTime: Date.now(),
+  };
+}
+
+/** @param {import('./types').GameSession} game */
+function buildPhaseSyncForClient(game) {
+  if (!game || game.phase === "lobby") return null;
+  if (game.phase === "finished") {
+    return { phase: "finished", leaderboard: leaderboard(game) };
+  }
+  if (game.phase === "question") {
+    const payload = buildQuestionPayload(game);
+    if (!payload) return null;
+    return { phase: "question", payload };
+  }
+  if (game.phase === "reveal") {
+    const q = game.quiz.questions[game.questionIndex];
+    if (!q) return null;
+    const answers = [...game.answersThisRound.values()];
+    const correctIndex = q.correctIndex;
+    const choiceCounts = q.choices.map((_, i) =>
+      answers.length ? answers.filter((v) => v.choiceIndex === i).length : 0
+    );
+    return {
+      phase: "reveal",
+      payload: {
+        questionIndex: game.questionIndex,
+        correctIndex,
+        choiceCounts,
+        leaderboard: leaderboard(game),
+      },
+    };
+  }
+  return null;
+}
+
+/** @param {import('./types').GameSession} game */
 function buildAnalyticsSummary(game) {
   const questionCount = game.quiz.questions.length;
   const rounds = game.analytics || [];
@@ -287,6 +337,7 @@ function createQuizServer() {
           name: player.name,
           title: game.quiz.title,
           phase: game.phase,
+          sync: buildPhaseSyncForClient(game),
         });
         return;
       }
@@ -295,10 +346,44 @@ function createQuizServer() {
         ack?.({ ok: false, error: `This game is full (${MAX_PLAYERS_PER_GAME} players)` });
         return;
       }
-      if (game.phase !== "lobby") {
-        ack?.({ ok: false, error: "Game already started" });
+
+      if (game.phase === "finished") {
+        ack?.({ ok: false, error: "Game has ended" });
         return;
       }
+
+      if (game.phase !== "lobby") {
+        if (game.phase !== "question" && game.phase !== "reveal") {
+          ack?.({ ok: false, error: "Game already started" });
+          return;
+        }
+        const displayNameLate = sanitizeName(name);
+        const newId = randomId(10);
+        game.players.set(newId, {
+          id: newId,
+          name: displayNameLate,
+          score: 0,
+          connected: true,
+          lastSeenAt: Date.now(),
+        });
+        socket.data.role = "player";
+        socket.data.pin = pin;
+        socket.data.playerId = newId;
+        socket.join(roomId(pin));
+        io.to(roomId(pin)).emit("lobby:update", lobbyPayload(game));
+        touchGame();
+        ack?.({
+          ok: true,
+          playerId: newId,
+          name: displayNameLate,
+          title: game.quiz.title,
+          resumed: false,
+          lateJoin: true,
+          sync: buildPhaseSyncForClient(game),
+        });
+        return;
+      }
+
       const displayName = sanitizeName(name);
       const id = randomId(10);
       game.players.set(id, {
@@ -314,7 +399,14 @@ function createQuizServer() {
       socket.join(roomId(pin));
       io.to(roomId(pin)).emit("lobby:update", lobbyPayload(game));
       touchGame();
-      ack?.({ ok: true, playerId: id, name: displayName, title: game.quiz.title, resumed: false });
+      ack?.({
+        ok: true,
+        playerId: id,
+        name: displayName,
+        title: game.quiz.title,
+        resumed: false,
+        sync: buildPhaseSyncForClient(game),
+      });
     });
 
     socket.on("host:start", ({ pin, hostSecret: hs }, ack) => {
@@ -341,33 +433,29 @@ function createQuizServer() {
         ack?.({ ok: false });
         return;
       }
-      if (game.phase === "finished") {
+      const result = advanceHostOneStep(io, game, pin);
+      if (!result.ok) ack?.({ ok: false });
+      else ack?.({ ok: true, finished: Boolean(result.finished) });
+    });
+
+    socket.on("host:skipToNextQuestion", ({ pin, hostSecret: hs }, ack) => {
+      const game = getGame(pin);
+      if (!game || game.hostSecret !== hs) {
         ack?.({ ok: false });
         return;
       }
       if (game.phase === "question") {
-        revealRound(io, game);
-        ack?.({ ok: true });
-        return;
-      }
-      if (game.phase === "reveal") {
-        const next = game.questionIndex + 1;
-        if (next >= game.quiz.questions.length) {
-          game.phase = "finished";
-          io.to(roomId(pin)).emit("game:finished", {
-            leaderboard: leaderboard(game),
-          });
-          touchGame();
-          ack?.({ ok: true, finished: true });
+        const r1 = advanceHostOneStep(io, game, pin);
+        if (!r1.ok) {
+          ack?.({ ok: false });
           return;
         }
-        game.questionIndex = next;
-        game.phase = "question";
-        game.answersThisRound = new Map();
-        touchGame();
-        broadcastQuestion(io, game);
-        ack?.({ ok: true });
+        const r2 = advanceHostOneStep(io, game, pin);
+        ack?.({ ok: r2.ok, finished: Boolean(r2.finished) });
+        return;
       }
+      const r = advanceHostOneStep(io, game, pin);
+      ack?.({ ok: r.ok, finished: Boolean(r.finished) });
     });
 
     socket.on("player:answer", ({ pin, questionIndex, choiceIndex }) => {
@@ -430,16 +518,8 @@ function createQuizServer() {
 /** @param {import('./types').GameSession} game */
 function broadcastQuestion(io, game) {
   game.questionStartedAt = Date.now();
-  const q = game.quiz.questions[game.questionIndex];
-  const payload = {
-    questionIndex: game.questionIndex,
-    total: game.quiz.questions.length,
-    text: q.text,
-    choices: q.choices,
-    timeSec: q.timeSec,
-    points: q.points,
-  };
-  io.to(roomId(game.pin)).emit("round:question", payload);
+  const payload = buildQuestionPayload(game);
+  if (payload) io.to(roomId(game.pin)).emit("round:question", payload);
 }
 
 /** @param {import('./types').GameSession} game */
@@ -488,6 +568,36 @@ function revealRound(io, game) {
     choiceCounts,
     leaderboard: leaderboard(game),
   });
+}
+
+/**
+ * One host control step: question→reveal, or reveal→next question (or finish).
+ * @returns {{ ok: true, finished?: boolean } | { ok: false }}
+ */
+function advanceHostOneStep(io, game, pin) {
+  if (game.phase === "finished") return { ok: false };
+  if (game.phase === "question") {
+    revealRound(io, game);
+    return { ok: true };
+  }
+  if (game.phase === "reveal") {
+    const next = game.questionIndex + 1;
+    if (next >= game.quiz.questions.length) {
+      game.phase = "finished";
+      io.to(roomId(pin)).emit("game:finished", {
+        leaderboard: leaderboard(game),
+      });
+      touchGame();
+      return { ok: true, finished: true };
+    }
+    game.questionIndex = next;
+    game.phase = "question";
+    game.answersThisRound = new Map();
+    touchGame();
+    broadcastQuestion(io, game);
+    return { ok: true };
+  }
+  return { ok: false };
 }
 
 if (require.main === module) {
