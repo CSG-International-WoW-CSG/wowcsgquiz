@@ -484,6 +484,17 @@
         leaderboard.appendChild(li);
       });
       show(revealPanel, true);
+      const endsAt =
+        typeof payload.revealEndsAt === "number" && payload.revealEndsAt > 0
+          ? payload.revealEndsAt
+          : Date.now() + (Number(payload.revealHoldSec) || 5) * 1000;
+      const tick = () => {
+        const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+        timerEl.textContent = left > 0 ? `Next question in ${left}s` : "";
+        if (left <= 0) stopTimer();
+      };
+      tick();
+      timerId = setInterval(tick, 250);
     });
 
     socket.on("game:finished", (payload) => {

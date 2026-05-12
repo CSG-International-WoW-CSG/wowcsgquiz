@@ -15,6 +15,9 @@
   const ptimer = $("ptimer");
   const pchoices = $("pchoices");
   const revealTitle = $("revealTitle");
+  const revealQtext = $("revealQtext");
+  const revealChoices = $("revealChoices");
+  const revealCountdown = $("revealCountdown");
   const miniLb = $("miniLb");
   const doneLb = $("doneLb");
 
@@ -27,6 +30,7 @@
   let pin = "";
   let playerToken = "";
   let timerId = null;
+  let revealCountdownId = null;
   let currentQ = -1;
 
   function show(el, on) {
@@ -57,6 +61,25 @@
     ptimer.textContent = "";
   }
 
+  function stopRevealCountdown() {
+    if (revealCountdownId) clearInterval(revealCountdownId);
+    revealCountdownId = null;
+    if (revealCountdown) revealCountdown.textContent = "";
+  }
+
+  /** @param {number} endsAt wall-clock ms */
+  function startRevealCountdown(endsAt) {
+    stopRevealCountdown();
+    if (!revealCountdown) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      revealCountdown.textContent = left > 0 ? `Next question in ${left}s` : "";
+      if (left <= 0) stopRevealCountdown();
+    };
+    tick();
+    revealCountdownId = setInterval(tick, 250);
+  }
+
   /** @param {number} sec fallback duration @param {number} [endsAt] wall-clock ms when round ends (server) */
   function startTimer(sec, endsAt) {
     stopTimer();
@@ -75,6 +98,7 @@
   }
 
   function renderQuestionView(payload) {
+    stopRevealCountdown();
     window.QuizMusic?.setSessionActive?.(true);
     window.QuizMusic?.playBackdrop?.();
     currentQ = payload.questionIndex;
@@ -103,6 +127,45 @@
     startTimer(payload.timeSec, payload.endsAt);
   }
 
+  /** @param {Record<string, unknown>} payload */
+  function renderRevealView(payload) {
+    stopTimer();
+    stopRevealCountdown();
+    show(wait, false);
+    show(play, false);
+    show(reveal, true);
+    let ci = Number(payload.correctIndex);
+    if (!Number.isInteger(ci) || ci < 0) ci = 0;
+    const choices = Array.isArray(payload.choices) ? payload.choices : [];
+    if (choices.length && ci >= choices.length) ci = choices.length - 1;
+    const letter = String.fromCharCode(65 + ci);
+    const correctLabel = choices[ci] != null ? String(choices[ci]) : "";
+    revealTitle.textContent = correctLabel
+      ? `Correct answer: ${letter} — ${correctLabel}`
+      : `Correct answer: ${letter}`;
+    if (revealQtext) revealQtext.textContent = String(payload.text ?? "");
+    if (revealChoices) {
+      revealChoices.innerHTML = "";
+      choices.forEach((c, i) => {
+        const d = document.createElement("div");
+        d.className = `choice-btn c${i % 8}${i === ci ? " reveal-correct" : " reveal-dim"}`;
+        d.textContent = String(c);
+        revealChoices.appendChild(d);
+      });
+    }
+    miniLb.innerHTML = "";
+    (payload.leaderboard || []).forEach((row) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
+      miniLb.appendChild(li);
+    });
+    const endsAt =
+      typeof payload.revealEndsAt === "number" && payload.revealEndsAt > 0
+        ? payload.revealEndsAt
+        : Date.now() + (Number(payload.revealHoldSec) || 5) * 1000;
+    startRevealCountdown(endsAt);
+  }
+
   function wirePlayerSocketHandlers(sock) {
     sock.on("round:question", (payload) => {
       renderQuestionView(payload);
@@ -111,21 +174,13 @@
     sock.on("player:answerAck", () => {});
 
     sock.on("round:reveal", (payload) => {
-      stopTimer();
-      show(play, false);
-      show(reveal, true);
-      revealTitle.textContent = "Scores";
-      miniLb.innerHTML = "";
-      (payload.leaderboard || []).forEach((row) => {
-        const li = document.createElement("li");
-        li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
-        miniLb.appendChild(li);
-      });
+      renderRevealView(payload);
     });
 
     sock.on("game:finished", (payload) => {
       window.QuizMusic?.setSessionActive?.(false);
       stopTimer();
+      stopRevealCountdown();
       show(wait, false);
       show(play, false);
       show(reveal, false);
@@ -160,22 +215,13 @@
       return;
     }
     if (sync.phase === "reveal" && sync.payload) {
-      stopTimer();
       show(join, false);
-      show(wait, false);
-      show(play, false);
-      show(reveal, true);
-      revealTitle.textContent = "Scores";
-      miniLb.innerHTML = "";
-      (sync.payload.leaderboard || []).forEach((row) => {
-        const li = document.createElement("li");
-        li.innerHTML = `<span>${row.rank}. ${escapeHtml(row.name)}</span><span class="score">${row.score}</span>`;
-        miniLb.appendChild(li);
-      });
+      renderRevealView(sync.payload);
       return;
     }
     if (sync.phase === "finished" && sync.leaderboard) {
       stopTimer();
+      stopRevealCountdown();
       window.QuizMusic?.setSessionActive?.(false);
       show(join, false);
       show(wait, false);

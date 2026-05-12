@@ -17,6 +17,68 @@ const quizLibrary = require("./quizLibrary");
 const PORT = Number(process.env.PORT) || 3333;
 const HOST_ADMIN_PASSWORD = String(process.env.HOST_ADMIN_PASSWORD || "wowcsg-admin");
 const PLAYER_RECONNECT_GRACE_MS = 60000;
+/** Show correct answer / scores this long before auto-advancing to the next question. */
+const REVEAL_HOLD_MS = 5000;
+const REVEAL_HOLD_SEC = Math.round(REVEAL_HOLD_MS / 1000);
+
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const questionEndTimers = new Map();
+/** @type {Map<string, ReturnType<typeof setTimeout>>} */
+const revealAdvanceTimers = new Map();
+
+function clearQuestionEndTimer(pin) {
+  const t = questionEndTimers.get(pin);
+  if (t) {
+    clearTimeout(t);
+    questionEndTimers.delete(pin);
+  }
+}
+
+function clearRevealAdvanceTimer(pin) {
+  const t = revealAdvanceTimers.get(pin);
+  if (t) {
+    clearTimeout(t);
+    revealAdvanceTimers.delete(pin);
+  }
+}
+
+function clearAllPhaseTimers(pin) {
+  clearQuestionEndTimer(pin);
+  clearRevealAdvanceTimer(pin);
+}
+
+function scheduleQuestionEndTimer(io, pin) {
+  clearQuestionEndTimer(pin);
+  const game = getGame(pin);
+  if (!game || game.phase !== "question") return;
+  const q = game.quiz.questions[game.questionIndex];
+  if (!q) return;
+  const qIdx = game.questionIndex;
+  const ms = Math.max(1000, q.timeSec * 1000);
+  const tid = setTimeout(() => {
+    questionEndTimers.delete(pin);
+    const g = getGame(pin);
+    if (!g || g.phase !== "question" || g.questionIndex !== qIdx) return;
+    revealRound(io, g);
+  }, ms);
+  questionEndTimers.set(pin, tid);
+}
+
+function scheduleRevealAdvanceTimer(io, pin) {
+  clearRevealAdvanceTimer(pin);
+  const game = getGame(pin);
+  if (!game || game.phase !== "reveal") return;
+  const qIdx = game.questionIndex;
+  const endsAt = (game.revealStartedAt ?? Date.now()) + REVEAL_HOLD_MS;
+  const ms = Math.max(0, endsAt - Date.now());
+  const tid = setTimeout(() => {
+    revealAdvanceTimers.delete(pin);
+    const g = getGame(pin);
+    if (!g || g.phase !== "reveal" || g.questionIndex !== qIdx) return;
+    advanceHostOneStep(io, g, pin);
+  }, ms);
+  revealAdvanceTimers.set(pin, tid);
+}
 
 function randomId(bytes = 24) {
   return crypto.randomBytes(bytes).toString("hex");
@@ -120,13 +182,20 @@ function buildPhaseSyncForClient(game) {
     const choiceCounts = q.choices.map((_, i) =>
       answers.length ? answers.filter((v) => v.choiceIndex === i).length : 0
     );
+    const revealStarted = game.revealStartedAt;
+    const revealEndsAt =
+      typeof revealStarted === "number" ? revealStarted + REVEAL_HOLD_MS : Date.now() + REVEAL_HOLD_MS;
     return {
       phase: "reveal",
       payload: {
         questionIndex: game.questionIndex,
+        text: q.text,
+        choices: q.choices,
         correctIndex,
         choiceCounts,
         leaderboard: leaderboard(game),
+        revealHoldSec: REVEAL_HOLD_SEC,
+        revealEndsAt,
       },
     };
   }
@@ -450,8 +519,7 @@ function createQuizServer() {
           ack?.({ ok: false });
           return;
         }
-        const r2 = advanceHostOneStep(io, game, pin);
-        ack?.({ ok: r2.ok, finished: Boolean(r2.finished) });
+        ack?.({ ok: true, finished: Boolean(r1.finished) });
         return;
       }
       const r = advanceHostOneStep(io, game, pin);
@@ -480,6 +548,7 @@ function createQuizServer() {
     socket.on("host:end", ({ pin, hostSecret: hs }) => {
       const game = getGame(pin);
       if (!game || game.hostSecret !== hs) return;
+      clearAllPhaseTimers(pin);
       deleteGame(pin);
       io.to(roomId(pin)).emit("game:ended");
     });
@@ -517,13 +586,16 @@ function createQuizServer() {
 
 /** @param {import('./types').GameSession} game */
 function broadcastQuestion(io, game) {
+  clearAllPhaseTimers(game.pin);
   game.questionStartedAt = Date.now();
   const payload = buildQuestionPayload(game);
   if (payload) io.to(roomId(game.pin)).emit("round:question", payload);
+  scheduleQuestionEndTimer(io, game.pin);
 }
 
 /** @param {import('./types').GameSession} game */
 function revealRound(io, game) {
+  clearQuestionEndTimer(game.pin);
   const q = game.quiz.questions[game.questionIndex];
   const correctIndex = q.correctIndex;
   const startedAt = game.questionStartedAt ?? Date.now();
@@ -545,6 +617,8 @@ function revealRound(io, game) {
   }
 
   game.phase = "reveal";
+  game.revealStartedAt = Date.now();
+  const revealEndsAt = game.revealStartedAt + REVEAL_HOLD_MS;
   const correctAnswers = answers.filter((a) => a.choiceIndex === correctIndex).length;
   const avgResponseMs = answers.length
     ? Math.round(
@@ -564,10 +638,15 @@ function revealRound(io, game) {
 
   io.to(roomId(game.pin)).emit("round:reveal", {
     questionIndex: game.questionIndex,
+    text: q.text,
+    choices: q.choices,
     correctIndex,
     choiceCounts,
     leaderboard: leaderboard(game),
+    revealHoldSec: REVEAL_HOLD_SEC,
+    revealEndsAt,
   });
+  scheduleRevealAdvanceTimer(io, game.pin);
 }
 
 /**
@@ -581,6 +660,8 @@ function advanceHostOneStep(io, game, pin) {
     return { ok: true };
   }
   if (game.phase === "reveal") {
+    clearRevealAdvanceTimer(pin);
+    delete game.revealStartedAt;
     const next = game.questionIndex + 1;
     if (next >= game.quiz.questions.length) {
       game.phase = "finished";
