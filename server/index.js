@@ -120,6 +120,16 @@ function requireHostPassword(password) {
   return String(password ?? "") === HOST_ADMIN_PASSWORD;
 }
 
+const MIN_GAME_HOST_PASSWORD_LEN = 6;
+const MAX_GAME_HOST_PASSWORD_LEN = 100;
+
+/** User-chosen password when creating a room (not the server library admin password). */
+function validateGameHostPassword(password) {
+  const s = String(password ?? "").trim();
+  if (s.length < MIN_GAME_HOST_PASSWORD_LEN || s.length > MAX_GAME_HOST_PASSWORD_LEN) return null;
+  return s;
+}
+
 /** @param {import('./types').GameSession} game */
 function lobbyPayload(game) {
   const players = [...game.players.values()];
@@ -235,8 +245,11 @@ function createQuizServer() {
 
   app.post("/api/host/session", (req, res) => {
     const hostName = sanitizeName(req.body?.hostName || "Host");
-    if (!requireHostPassword(req.body?.hostPassword)) {
-      res.status(401).json({ ok: false, error: "Invalid host password" });
+    if (!validateGameHostPassword(req.body?.hostPassword)) {
+      res.status(400).json({
+        ok: false,
+        error: `Choose a host password between ${MIN_GAME_HOST_PASSWORD_LEN} and ${MAX_GAME_HOST_PASSWORD_LEN} characters (this is yours for this game, not the library admin password).`,
+      });
       return;
     }
     const quiz = validateQuiz(req.body?.quiz) ?? DEFAULT_QUIZ;

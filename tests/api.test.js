@@ -67,20 +67,27 @@ test("health endpoint works", async () => {
   }
 });
 
-test("host session requires password and returns auth tokens", async () => {
+test("host session requires a game password (6–100 chars) and returns auth tokens", async () => {
   const svc = await startServer();
   try {
-    const denied = await fetch(`${svc.baseUrl}/api/host/session`, {
+    const deniedShort = await fetch(`${svc.baseUrl}/api/host/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hostName: "Host", hostPassword: "bad-pass", quiz: { questions: [] } }),
+      body: JSON.stringify({ hostName: "Host", hostPassword: "short", quiz: { questions: [] } }),
     });
-    assert.equal(denied.status, 401);
+    assert.equal(deniedShort.status, 400);
+
+    const deniedEmpty = await fetch(`${svc.baseUrl}/api/host/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostName: "Host", hostPassword: "   ", quiz: { questions: [] } }),
+    });
+    assert.equal(deniedEmpty.status, 400);
 
     const ok = await fetch(`${svc.baseUrl}/api/host/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hostName: "Host", hostPassword: HOST_PASSWORD }),
+      body: JSON.stringify({ hostName: "Host", hostPassword: "my-own-game-pass" }),
     });
     assert.equal(ok.status, 200);
     const body = await ok.json();

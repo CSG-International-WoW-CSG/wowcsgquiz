@@ -32,11 +32,14 @@
   const hostPasswordInput = $("hostPassword");
   const libraryHostPasswordInput = $("libraryHostPassword");
 
-  /** Password from the library section field, or the top-of-form host password (same server password). */
-  function effectiveHostPassword() {
-    const lib = libraryHostPasswordInput?.value?.trim() ?? "";
-    const main = hostPasswordInput?.value?.trim() ?? "";
-    return lib || main;
+  /** User-chosen password when creating a game (sent to POST /api/host/session). */
+  function gameHostPassword() {
+    return hostPasswordInput?.value?.trim() ?? "";
+  }
+
+  /** Server admin password for saved-quiz library API only. */
+  function libraryAdminPassword() {
+    return libraryHostPasswordInput?.value?.trim() ?? "";
   }
 
   const quizJson = $("quizJson");
@@ -242,9 +245,9 @@
   }
 
   async function refreshSavedQuizList() {
-    const pw = effectiveHostPassword();
+    const pw = libraryAdminPassword();
     if (!pw) {
-      setLibraryStatus("Enter the host password in this section (or at the top), then refresh.");
+      setLibraryStatus("Enter the library admin password in the Saved quizzes section, then refresh.");
       return;
     }
     setLibraryStatus("Loading…");
@@ -276,13 +279,13 @@
 
   async function loadSavedQuizIntoEditor() {
     const id = savedQuizSelect.value;
-    const pw = effectiveHostPassword();
+    const pw = libraryAdminPassword();
     if (!id) {
       setLibraryStatus("Pick a saved quiz from the list.");
       return;
     }
     if (!pw) {
-      setLibraryStatus("Enter the host password in this section (or at the top).");
+      setLibraryStatus("Enter the library admin password in the Saved quizzes section.");
       return;
     }
     setLibraryStatus("Loading…");
@@ -304,9 +307,9 @@
   }
 
   async function saveQuizToLibraryAsNew() {
-    const pw = effectiveHostPassword();
+    const pw = libraryAdminPassword();
     if (!pw) {
-      setLibraryStatus("Enter the host password in this section (or at the top).");
+      setLibraryStatus("Enter the library admin password in the Saved quizzes section.");
       return;
     }
     const got = getCurrentQuizFromEditor();
@@ -350,13 +353,19 @@
     show(lobbyLibraryNote, false);
     lobbyLibraryNote.textContent = "";
 
+    const gp = gameHostPassword();
+    if (gp.length < 6 || gp.length > 100) {
+      setError(setupErr, "Enter a game password of 6–100 characters (the field above the quiz).");
+      return false;
+    }
+
     const res = await fetch("/api/host/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         quiz,
         hostName: hostNameInput.value.trim() || "Host",
-        hostPassword: effectiveHostPassword(),
+        hostPassword: gp,
       }),
     });
     if (!res.ok) {
@@ -379,7 +388,7 @@
     show(lobby, true);
 
     if (chkSaveOnCreate.checked && !opts.fromLibrary) {
-      const pw = effectiveHostPassword();
+      const pw = libraryAdminPassword();
       const libName = librarySaveName.value.trim() || quiz.title || "Untitled";
       if (pw) {
         try {
@@ -408,18 +417,24 @@
   async function hostSelectedSavedQuiz() {
     setError(setupErr, "");
     const id = savedQuizSelect.value;
-    const pw = effectiveHostPassword();
+    const libPw = libraryAdminPassword();
+    const gp = gameHostPassword();
     if (!id) {
       setLibraryStatus("Pick a saved quiz from the list.");
       return;
     }
-    if (!pw) {
-      setLibraryStatus("Enter the host password in this section (or at the top).");
+    if (gp.length < 6 || gp.length > 100) {
+      setError(setupErr, "Enter a game password of 6–100 characters (top of page) before hosting.");
+      setLibraryStatus("Set your game password above, then try again.");
+      return;
+    }
+    if (!libPw) {
+      setLibraryStatus("Enter the library admin password in the Saved quizzes section to load this quiz.");
       return;
     }
     setLibraryStatus("Loading quiz and starting session…");
     try {
-      const res = await fetch(`/api/quizzes/library/${encodeURIComponent(id)}?hostPassword=${encodeURIComponent(pw)}`);
+      const res = await fetch(`/api/quizzes/library/${encodeURIComponent(id)}?hostPassword=${encodeURIComponent(libPw)}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setLibraryStatus(data.error || "Could not load that quiz.");
@@ -444,9 +459,9 @@
 
   async function updateSavedQuizInLibrary() {
     if (!loadedSavedQuizId) return;
-    const pw = effectiveHostPassword();
+    const pw = libraryAdminPassword();
     if (!pw) {
-      setLibraryStatus("Enter the host password in this section (or at the top).");
+      setLibraryStatus("Enter the library admin password in the Saved quizzes section.");
       return;
     }
     const got = getCurrentQuizFromEditor();

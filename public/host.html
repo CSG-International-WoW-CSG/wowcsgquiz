@@ -28,8 +28,8 @@
           <input id="hostName" type="text" maxlength="24" placeholder="Host" value="Host" />
         </div>
         <div>
-          <label for="hostPassword">Host password</label>
-          <input id="hostPassword" type="password" maxlength="100" placeholder="Required" />
+          <label for="hostPassword">Your game password (min. 6 characters)</label>
+          <input id="hostPassword" type="password" maxlength="100" placeholder="You choose — not the library admin password" autocomplete="new-password" />
         </div>
       </div>
 
@@ -49,10 +49,10 @@
       <details class="advanced" style="margin-top: 16px">
         <summary>Saved quizzes (library)</summary>
         <p class="fineprint" style="margin-bottom: 10px">
-          Quizzes are stored on the server for this app instance. Enter the host password below, then refresh the list. You can load a quiz into the editor, <strong>host the selected quiz in one step</strong>, save as new, or update the one you loaded.
+          Quizzes are stored on the server for this app instance. Enter your team’s <strong>library admin password</strong> (configured on the server for saved quizzes), then refresh the list. You can load a quiz into the editor, <strong>host the selected quiz in one step</strong>, save as new, or update the one you loaded. This is separate from the game password at the top of the page.
         </p>
-        <label for="libraryHostPassword">Host password</label>
-        <input id="libraryHostPassword" type="password" maxlength="100" autocomplete="off" placeholder="Required to refresh list / load / save" />
+        <label for="libraryHostPassword">Server admin password (library only)</label>
+        <input id="libraryHostPassword" type="password" maxlength="100" autocomplete="off" placeholder="Required for refresh / load / save in library" />
         <div class="row-2" style="margin-top: 12px">
           <div>
             <label for="savedQuizSelect">Load saved</label>
